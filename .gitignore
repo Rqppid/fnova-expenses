@@ -3,3 +3,5 @@ secrets/
 __pycache__/
 *.pyc
 *.xlsx
+out/
+state/

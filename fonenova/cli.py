@@ -11,6 +11,11 @@ Commands
   verify   [--tracker septdec]
   backup
   diff     BEFORE AFTER
+  pack     [--out DIR]                      VAT return pack for the accountant (read-only)
+  find     [--date DD.MM.YY] [--amount N] [--ref TEXT] [--days 3]   search both trackers
+  archive  --path FILE                      move an _inbox file to _inbox/processed/<date>/
+  gmail-auth                                one-time browser sign-in for the Gmail API
+  daily    [--no-claude]                    run the unattended daily routine
 Write commands accept --path to operate on a copy instead of the live file.
 """
 from __future__ import annotations
@@ -67,6 +72,12 @@ def main(argv=None) -> int:
 
     sub.add_parser("backup")
     d = sub.add_parser("diff"); d.add_argument("before"); d.add_argument("after")
+    fd = sub.add_parser("find"); fd.add_argument("--date"); fd.add_argument("--amount", type=float)
+    fd.add_argument("--ref"); fd.add_argument("--days", type=int, default=3)
+    ar = sub.add_parser("archive"); ar.add_argument("--path", required=True)
+    sub.add_parser("gmail-auth")
+    dl = sub.add_parser("daily"); dl.add_argument("--no-claude", action="store_true")
+    pk = sub.add_parser("pack"); pk.add_argument("--out", default=str(Path(__file__).resolve().parent.parent / "out"))
 
     args = ap.parse_args(argv)
     cfg = load_config()
@@ -98,6 +109,62 @@ def main(argv=None) -> int:
     if args.cmd == "diff":
         from .xlsx_diff import diff, render
         print(render(diff(Path(args.before), Path(args.after))))
+        return 0
+
+    if args.cmd == "find":
+        from .sheet import parse_ddmmyy, read_snapshot
+        want = parse_ddmmyy(args.date) if args.date else None
+        hits = 0
+        for k, lay in lays.items():
+            for r in read_snapshot(lay.path, lay).rows:
+                if want and (not r.date or abs((r.date - want).days) > args.days):
+                    continue
+                if args.amount is not None and (r.amount is None or abs(r.amount - args.amount) > 0.005):
+                    continue
+                if args.ref and args.ref.lower() not in (r.ref + " " + r.remarks).lower():
+                    continue
+                hits += 1
+                print(f"{k} row {r.r}: {r.date_text} | {r.vendor} | {r.desc} | {r.amount_raw} | "
+                      f"{r.vat_flag} {r.vat_raw or ''} | ref {r.ref} | {r.remarks[:120]}")
+        print(f"{hits} match(es)")
+        return 0
+
+    if args.cmd == "archive":
+        import os
+        from datetime import date as _d
+        from .intake import inbox_dir
+        src = Path(args.path).resolve()
+        ib = inbox_dir(Path(cfg["root"])).resolve()
+        if ib not in src.parents:
+            print(f"refused: {src} is not inside {ib}")
+            return 2
+        dest = ib / "processed" / f"{_d.today():%Y-%m-%d}" / src.name
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        if dest.exists():
+            print(f"refused: {dest} exists")
+            return 2
+        os.replace(src, dest)
+        print(f"archived {src.name} -> {dest}")
+        return 0
+
+    if args.cmd == "gmail-auth":
+        from .gmail import service
+        from .layout import REPO
+        service(REPO / "secrets", interactive=True)
+        print("Gmail token saved to secrets/token.json")
+        return 0
+
+    if args.cmd == "daily":
+        from .daily import run
+        import json as _j
+        print(_j.dumps(run(use_claude=not args.no_claude), indent=2, default=str))
+        return 0
+
+    if args.cmd == "pack":
+        from .pack import build_pack
+        x, m = build_pack(lays, Path(args.out))
+        print(x)
+        print(m.read_text(encoding="utf-8"))
         return 0
 
     if args.cmd == "file":

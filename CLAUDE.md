@@ -50,3 +50,11 @@ Always use the tooling (`python -m fonenova.cli ...`) for writes. It backs up, w
 - OneDrive can silently revert writes or lag. verify() re-reads from disk and checks the hash changed.
 - Excel open on the PC blocks writes (`~$` lock file). The tooling refuses to write. Ask Hamza to close Excel.
 - A receipt matching an existing row (either tracker) is a duplicate or supplementary, never a new row. Check byte size/hash against filed copies.
+
+## Commands (run from the repo: `.venv\Scripts\python.exe -m fonenova.cli <cmd>`)
+- `status`, `audit [--out FILE] [--matches]`, `find --date DD.MM.YY --amount N`, `pack` (return pack to `out/`)
+- `add ...`, `complete --row N ...`, `delete --row N --expect-date ... --expect-vendor ... --expect-amount ...`
+- `file --src PATH --vendor V --date DD.MM.YY [--folder F] [--descriptor X]`, `archive --path FILE`
+- `verify`, `backup`, `diff BEFORE AFTER`, `gmail-auth`, `daily [--no-claude]`
+- Tests: `.venv\Scripts\python.exe -m pytest -q` (use temp copies of the 2026-10-05 reference backup, never the live file).
+- Setup and Xero plan: `docs/setup-and-xero.md`. Daily prompt: `routine/daily-prompt.md`.
