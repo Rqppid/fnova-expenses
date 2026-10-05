@@ -1,0 +1,18 @@
+# Paths and run settings for the Fone Nova expense tooling.
+root = 'C:\Users\fonen\OneDrive\Desktop\VAT RETURNS'
+backup_dir = '_backups'
+
+# Receipt files that are known and deliberately not (yet) logged. Audit reports them
+# as "pending" instead of "orphan". Paths are relative to the tracker's receipts folder.
+[pending.septdec]
+"DHL-Express/DHL-Express-28.09.26-Invoice-BFSR011352661.pdf" = "DHL inv BFSR011352661 £30.43, DD due ~12 Oct, log on debit date"
+"DHL-Express/DHL-Express-BFSR011352661.pdf" = "Old-name copy of DHL inv BFSR011352661 (pending)"
+"HQ-IWG-Service/HQ-IWG-Service-01.10.26-Invoice-7920-756.pdf" = "HQ-IWG #7920-756 £2,160 due 15 Oct, log once card payment confirmed"
+"HQ-IWG-Service/HQ-Invoice_#7920-756-01.10.26.pdf" = "Old-name copy of HQ-IWG #7920-756 (pending)"
+"Flat Deposit+Rents/Flat-Rent-03.08.26-Invoice-PP22862.pdf" = "August rent, V18 period, not this tracker"
+"Flat Deposit+Rents/Flat-Rent-03.08.26-TransferConfirmation.pdf" = "August rent, V18 period, not this tracker"
+"Flat Deposit+Rents/Invoice-PP22862-20260803.pdf" = "Old-name copy, August rent"
+"Flat Deposit+Rents/RENT+DEPOSIT- TransferConfirmation (03-08-26).pdf" = "Old-name copy, August rent"
+
+[pending.v18]
+"B&Q-30.08.26/B&Q-30.08.26.jpeg" = "B&Q £6.62, deliberately not logged (standing decision 13)"
