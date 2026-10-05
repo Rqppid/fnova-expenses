@@ -22,3 +22,8 @@ backup_dir = '_backups'
 # Tracker issues already known and waiting on Hamza. The daily run does not act on these rows.
 [known_issues.septdec]
 # "<row>" = "reason"   (row numbers shift when rows are added or deleted; keep this list short-lived)
+
+[cloud]
+# Application (client) ID from the Azure app registration (not a secret). Filled in during setup.
+ms_client_id = ""
+onedrive_base = "Desktop/VAT RETURNS"

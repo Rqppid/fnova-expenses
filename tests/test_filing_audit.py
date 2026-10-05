@@ -65,5 +65,7 @@ def test_audit_on_reference_finds_known_issues(lays, septdec_copy, v18_ref):
     assert any("septdec row 5" in d and "v18 row 313" in d for d in cross_duplicates(sd, v18))
     assert ("Remarks empty", 5) in {(k, r) for k, r, _ in sd.row_issues}
     hq = next(m for m in sd.matches if m.row.r == 29)
-    assert hq.files and all(f.is_transcript for f in hq.files)
+    names = {f.name for f in hq.files}
+    assert "HQ-IWG-Service-15.09.26.txt" in names                 # cited in Remarks
+    assert "HQ-IWG-Service-01.09.26-Invoice-7920-712.pdf" in names  # matched by invoice number
     assert {r for k, r, _ in v18.row_issues if k.startswith("amount not numeric")} == {214, 221, 234}

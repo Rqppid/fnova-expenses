@@ -7,7 +7,7 @@ from datetime import date
 from functools import cached_property
 from pathlib import Path
 
-from .backup import sha256
+from .hashing import content_hash
 
 ISO_RE = re.compile(r"(?<!\d)(20\d\d)-(\d\d)-(\d\d)(?!\d)")
 DMY_RE = re.compile(r"(?<!\d)(\d{1,2})[.\-](\d{1,2})[.\-](\d{4}|\d{2})(?!\d)")
@@ -66,7 +66,7 @@ class ReceiptFile:
 
     @cached_property
     def sha(self) -> str:
-        return sha256(self.path)
+        return content_hash(self.path)
 
     @cached_property
     def tokens(self) -> set[str]:

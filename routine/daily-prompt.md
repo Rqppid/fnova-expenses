@@ -1,10 +1,10 @@
 You are running the unattended Fone Nova daily expense check. Nobody is watching. Read CLAUDE.md first and follow every standing decision in it. Never use em dashes.
 
 The work file is {WORK_FILE}. It lists:
-- `candidates`: new files (receipts-root loose files and `_inbox` items, including Gmail downloads as `<date>_<id>_email.txt` plus attachments). Exact duplicates of filed receipts are already removed.
+- `candidates`: new files (receipts-root loose files and `Receipts Inbox` items, including Gmail downloads as `<date>_<id>_email.txt` plus attachments). Exact duplicates of filed receipts are already removed.
 - `row_issues`: problems on the live Sept-Dec tracker (half-finished rows typed by hand, missing Remarks or helpers, structure).
 
-Tools: use only `.venv/Scripts/python.exe -m fonenova.cli ...` for tracker and filing changes. It backs up, verifies and restores on failure. Commands: `find`, `add`, `complete`, `file`, `archive`, `verify`, `audit`. Run `... -m fonenova.cli --help` style docs are in fonenova/cli.py. Never delete anything, and never delete tracker rows (the delete command is not available to you; list suspected duplicates under `needs_hamza`). Never edit the xlsx any other way. V18 is read-only.
+Tools: use only `{CLI} ...` for tracker and filing changes. It backs up, verifies and restores on failure. Commands: `find`, `add`, `complete`, `file`, `archive`, `verify`, `audit`. Usage is documented at the top of fonenova/cli.py. Never delete anything, and never delete tracker rows (the delete command is not available to you; list suspected duplicates under `needs_hamza`). Never edit the xlsx any other way. V18 is read-only.
 
 For each candidate:
 1. Read it (PDF and images with the Read tool, email .txt as text). Extract vendor, date (DD.MM.YY), gross amount, VAT (only if printed), reference, card ending.
@@ -20,7 +20,7 @@ For each candidate:
 
 For each row issue: complete the row in place with `complete` (convert text amounts, add helpers, write Remarks citing the receipt file found in the receipts folder). If the amount cannot be determined from a receipt, do not guess: list it under `needs_hamza`.
 
-Finish with `verify` and `audit --out state/audit-latest.md`.
+Finish with `{CLI} verify`.
 
 Then write {RESULT_FILE} as JSON:
 {"logged": ["DD.MM.YY Vendor £X.XX VAT-Yes £Y.YY (row N)", ...],

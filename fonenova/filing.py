@@ -7,7 +7,7 @@ import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
-from .backup import sha256
+from .hashing import content_hash as sha256
 from .sheet import parse_ddmmyy
 
 

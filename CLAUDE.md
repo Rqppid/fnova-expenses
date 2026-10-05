@@ -58,3 +58,9 @@ Always use the tooling (`python -m fonenova.cli ...`) for writes. It backs up, w
 - `verify`, `backup`, `diff BEFORE AFTER`, `gmail-auth`, `daily [--no-claude]`
 - Tests: `.venv\Scripts\python.exe -m pytest -q` (use temp copies of the 2026-10-05 reference backup, never the live file).
 - Setup and Xero plan: `docs/setup-and-xero.md`. Daily prompt: `routine/daily-prompt.md`.
+
+## Cloud mode (PC off)
+- Receipts are scanned into `VAT RETURNS\Receipts Inbox` (OneDrive app > Scan). Gmail receipts land in `Receipts Inbox\gmail`.
+- Nightly cloud routine: `routine/cloud-routine.md` -> `python -m fonenova.cloud prep --dest /tmp/vat`, work via `python -m fonenova.cli --mirror /tmp/vat ...`, then `python -m fonenova.cloud finish --dest /tmp/vat`.
+- Mirror rules and safety: see the docstring of `fonenova/cloud.py`. Setup: `docs/cloud-setup.md`.
+- Run state and run log: `VAT RETURNS\_automation\` (shared by PC and cloud runs). Never run the PC task and the cloud routine on the same night once cloud is live.

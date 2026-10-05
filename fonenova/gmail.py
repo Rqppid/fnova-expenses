@@ -15,7 +15,11 @@ from html import unescape
 from pathlib import Path
 
 SCOPES = ["https://www.googleapis.com/auth/gmail.readonly",
-          "https://www.googleapis.com/auth/gmail.send"]
+          "https://www.googleapis.com/auth/gmail.send",
+          # Hidden per-app folder in Hamza's Google Drive: holds the rotating Microsoft token
+          # and run state for the cloud job. The app cannot see any other Drive files.
+          "https://www.googleapis.com/auth/drive.appdata"]
+TOKEN_ENV = "GOOGLE_TOKEN_JSON"     # cloud: the whole token.json content as a secret
 SELF = "fonenovaltd@gmail.com"
 QUERY = ('newer_than:2d (receipt OR invoice OR order OR confirmation OR payment OR booking OR '
          '"tax invoice" OR "e-ticket") -in:spam -in:trash')
@@ -30,12 +34,16 @@ class GmailAuthError(Exception):
     pass
 
 
-def service(secrets_dir: Path, interactive: bool = False):
+def credentials(secrets_dir: Path, interactive: bool = False):
+    import os
     from google.auth.transport.requests import Request
     from google.oauth2.credentials import Credentials
-    from googleapiclient.discovery import build
 
     token = secrets_dir / "token.json"
+    if os.environ.get(TOKEN_ENV):
+        creds = Credentials.from_authorized_user_info(json.loads(os.environ[TOKEN_ENV]), SCOPES)
+        creds.refresh(Request())
+        return creds
     creds = Credentials.from_authorized_user_file(str(token), SCOPES) if token.exists() else None
     if creds and creds.expired and creds.refresh_token:
         try:
@@ -53,7 +61,42 @@ def service(secrets_dir: Path, interactive: bool = False):
             raise GmailAuthError(f"Missing {client}")
         creds = InstalledAppFlow.from_client_secrets_file(str(client), SCOPES).run_local_server(port=0)
     token.write_text(creds.to_json(), encoding="utf-8")
+    return creds
+
+
+def service(secrets_dir: Path, interactive: bool = False, creds=None):
+    from googleapiclient.discovery import build
+    creds = creds or credentials(secrets_dir, interactive)
     return build("gmail", "v1", credentials=creds, cache_discovery=False)
+
+
+class AppData:
+    """JSON documents in the Drive appDataFolder (invisible in Drive's UI)."""
+
+    def __init__(self, creds):
+        from googleapiclient.discovery import build
+        self.d = build("drive", "v3", credentials=creds, cache_discovery=False)
+
+    def _find(self, name: str) -> str | None:
+        r = self.d.files().list(spaces="appDataFolder", q=f"name = '{name}'", fields="files(id)").execute()
+        f = r.get("files", [])
+        return f[0]["id"] if f else None
+
+    def get(self, name: str) -> dict | None:
+        fid = self._find(name)
+        if not fid:
+            return None
+        return json.loads(self.d.files().get_media(fileId=fid).execute())
+
+    def put(self, name: str, data: dict) -> None:
+        from googleapiclient.http import MediaInMemoryUpload
+        media = MediaInMemoryUpload(json.dumps(data).encode(), mimetype="application/json")
+        fid = self._find(name)
+        if fid:
+            self.d.files().update(fileId=fid, media_body=media).execute()
+        else:
+            self.d.files().create(body={"name": name, "parents": ["appDataFolder"]},
+                                  media_body=media, fields="id").execute()
 
 
 def _safe(name: str) -> str:

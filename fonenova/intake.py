@@ -1,14 +1,14 @@
-"""Find receipt candidates: loose files at both receipts roots and anything in the _inbox.
+"""Find receipt candidates: loose files at both receipts roots and anything in the Receipts Inbox.
 
 A candidate whose bytes match an already-filed receipt (either tracker) is a duplicate,
-not a new expense. Size is checked first, then SHA-256.
+not a new expense. Size is checked first, then the SHA-1 fingerprint.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
 
-from .backup import sha256
+from .hashing import content_hash
 from .layout import Layout
 from .receipts import build_index
 
@@ -24,8 +24,12 @@ class Candidate:
     duplicate_of: str | None  # receipts-relative path of an identical filed file
 
 
+INBOX_NAME = "Receipts Inbox"
+
+
 def inbox_dir(root: Path) -> Path:
-    return root / "_inbox"
+    """Where Hamza scans receipts to (OneDrive app > Scan) and where Gmail downloads land."""
+    return root / INBOX_NAME
 
 
 def scan(layouts: dict[str, Layout], root: Path) -> list[Candidate]:
@@ -50,7 +54,7 @@ def scan(layouts: dict[str, Layout], root: Path) -> list[Candidate]:
         size = path.stat().st_size
         if size == 0:
             continue
-        sha = sha256(path)
+        sha = content_hash(path)
         dup = None
         for key, f in filed.get(size, []):
             if f.sha == sha:

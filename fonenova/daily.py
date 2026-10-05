@@ -1,11 +1,13 @@
-"""Unattended daily routine.
+"""Daily routine, shared by the PC task (local) and the cloud job (OneDrive mirror).
 
-1. Fetch receipt emails (Gmail API) into VAT RETURNS/_inbox/gmail.
-2. Scan both receipts roots and the inbox for candidates; drop exact duplicates of filed receipts.
-3. Audit the live tracker for half-finished rows and structural damage.
-4. If there is work, hand it to Claude Code headless (routine/daily-prompt.md), which logs,
-   files and verifies using the CLI, then writes a result JSON.
-5. Notify only when something needs Hamza. Always append one line to docs/run-log.md.
+collect()   Gmail fetch into the Receipts Inbox, candidate scan, live-tracker health check.
+            Returns a work summary; `work_needed` says whether there is anything to do.
+(work)      Claude logs, files and verifies with the CLI (headless on the PC, or the cloud
+            agent itself), writing a result JSON.
+finalize()  Alerts, deadline reminders, run state and one run-log line. Notification is
+            sent only when something needs Hamza.
+
+State and the run log live in VAT RETURNS/_automation/ so both modes share them.
 """
 from __future__ import annotations
 
@@ -15,11 +17,10 @@ from datetime import date, datetime
 from pathlib import Path
 
 from .backup import excel_lock_file
+from .intake import inbox_dir
 from .layout import REPO, layouts, load_config
 
-STATE = REPO / "state"
 SECRETS = REPO / "secrets"
-RUN_LOG = REPO / "docs" / "run-log.md"
 PROMPT = REPO / "routine" / "daily-prompt.md"
 DEADLINE = date(2026, 11, 7)
 REMINDERS = {date(2026, 10, 31): "VAT return due 7 Nov (1 week). Pack: python -m fonenova.cli pack",
@@ -29,53 +30,55 @@ CLAUDE = Path.home() / ".local" / "bin" / "claude.exe"
 ALLOWED_CLI = ("find", "add", "complete", "file", "archive", "verify", "audit", "status")
 
 
-def _load(name: str, default):
-    p = STATE / name
-    return json.loads(p.read_text(encoding="utf-8")) if p.exists() else default
+class Paths:
+    def __init__(self, root: Path):
+        self.root = root
+        self.auto = root / "_automation"
+        self.state = self.auto / "state"
+        self.run_log = self.auto / "run-log.md"
+
+    def load(self, name: str, default):
+        p = self.state / name
+        return json.loads(p.read_text(encoding="utf-8")) if p.exists() else default
+
+    def save(self, name: str, data) -> None:
+        self.state.mkdir(parents=True, exist_ok=True)
+        (self.state / name).write_text(json.dumps(data, indent=2, default=str), encoding="utf-8")
+
+    def log(self, line: str) -> None:
+        self.auto.mkdir(parents=True, exist_ok=True)
+        with open(self.run_log, "a", encoding="utf-8") as fh:
+            fh.write(f"- {datetime.now():%Y-%m-%d %H:%M} {line}\n")
 
 
-def _save(name: str, data) -> None:
-    STATE.mkdir(exist_ok=True)
-    (STATE / name).write_text(json.dumps(data, indent=2, default=str), encoding="utf-8")
-
-
-def _log(line: str) -> None:
-    with open(RUN_LOG, "a", encoding="utf-8") as fh:
-        fh.write(f"- {datetime.now():%Y-%m-%d %H:%M} {line}\n")
-
-
-def run(today: date | None = None, use_claude: bool = True) -> dict:
+def collect(cfg: dict, gmail_svc=None, gmail_error: str | None = None, today: date | None = None) -> dict:
     today = today or date.today()
-    cfg = load_config()
     root = Path(cfg["root"])
+    P = Paths(root)
     lays = layouts(cfg)
-    alerts: list[str] = []
-    summary: dict = {"date": str(today), "gmail": None, "candidates": [], "row_issues": [],
-                     "claude": None}
+    summary: dict = {"date": str(today), "root": str(root), "gmail": None, "candidates": [],
+                     "duplicates": [], "row_issues": [], "alerts": []}
 
-    # 1. Gmail
-    svc = None
-    try:
-        from .gmail import fetch, service
-        svc = service(SECRETS)
-        got = fetch(svc, root / "_inbox" / "gmail", STATE / "gmail_seen.json")
-        summary["gmail"] = {"messages": len(got),
-                            "skipped": [e["subject"] for e in got if e["skipped"]]}
-    except Exception as e:
-        summary["gmail"] = {"error": str(e)}
-        if _load("last_gmail_error_day.json", "") != str(today):
-            alerts.append(f"Gmail access problem: {e}")
-            _save("last_gmail_error_day.json", str(today))
+    if gmail_svc is not None:
+        try:
+            from .gmail import fetch
+            got = fetch(gmail_svc, inbox_dir(root) / "gmail", P.state / "gmail_seen.json")
+            summary["gmail"] = {"messages": len(got), "skipped": [e["subject"] for e in got if e["skipped"]]}
+        except Exception as e:
+            gmail_error = str(e)
+    if gmail_error:
+        summary["gmail"] = {"error": gmail_error}
+        if P.load("last_gmail_error_day.json", "") != str(today):
+            summary["alerts"].append(f"Gmail access problem: {gmail_error}")
+            P.save("last_gmail_error_day.json", str(today))
 
-    # 2. Candidates
     from .intake import scan
     cands = scan(lays, root)
     new = [c for c in cands if c.duplicate_of is None]
-    dups = [c for c in cands if c.duplicate_of]
     summary["candidates"] = [{"path": str(c.path), "source": c.source, "size": c.size} for c in new]
-    summary["duplicates"] = [{"path": str(c.path), "same_as": c.duplicate_of} for c in dups]
+    summary["duplicates"] = [{"path": str(c.path), "same_as": c.duplicate_of}
+                             for c in cands if c.duplicate_of]
 
-    # 3. Live tracker health
     from .audit import audit_tracker
     a = audit_tracker(lays["septdec"])
     known = {int(k) for k in cfg.get("known_issues", {}).get("septdec", {})}
@@ -83,74 +86,93 @@ def run(today: date | None = None, use_claude: bool = True) -> dict:
     summary["row_issues"] = issues
     summary["totals"] = {"last_row": a.snap.last_row, "gross": a.snap.gross, "vat": a.snap.vat}
 
-    # Silence when nothing changed since the last run.
     fingerprint = sorted([c.sha for c in new] + issues)
-    changed = fingerprint != _load("last_fingerprint.json", [])
-    work = bool(new or issues)
+    summary["work_needed"] = bool(new or issues) and fingerprint != P.load("last_fingerprint.json", [])
+    summary["_fingerprint"] = fingerprint
+    return summary
 
-    # 4. Claude
-    if work and changed and use_claude:
-        lock = excel_lock_file(lays["septdec"].path)
-        if lock:
-            alerts.append("Excel has the live tracker open, so nothing could be logged. Close Excel; "
-                          "the next run will pick it up.")
-        else:
-            summary["claude"] = _run_claude(summary)
-            res = summary["claude"].get("result") or {}
-            for item in res.get("logged", []):
-                alerts.append(f"Logged: {item}")
-            for item in res.get("needs_hamza", []):
-                alerts.append(f"Needs you: {item}")
-            for item in res.get("errors", []):
-                alerts.append(f"Error: {item}")
-            if summary["claude"].get("error"):
-                alerts.append(f"Daily run error: {summary['claude']['error']}")
-    _save("last_fingerprint.json", fingerprint)
 
-    # 5. Deadline reminders, once each
-    sent = set(_load("reminders_sent.json", []))
+def finalize(cfg: dict, summary: dict, result: dict | None, extra_errors=(),
+             today: date | None = None) -> tuple[str, str] | None:
+    """Records state and the run log. Returns (title, body) when Hamza should be notified."""
+    today = today or date.today()
+    P = Paths(Path(cfg["root"]))
+    alerts = list(summary.get("alerts", []))
+    res = result or {}
+    alerts += [f"Logged: {x}" for x in res.get("logged", [])]
+    alerts += [f"Fixed: {x}" for x in res.get("completed", [])]
+    alerts += [f"Needs you: {x}" for x in res.get("needs_hamza", [])]
+    alerts += [f"Error: {x}" for x in list(res.get("errors", [])) + list(extra_errors)]
+    P.save("last_fingerprint.json", summary.get("_fingerprint", []))
+
+    sent = set(P.load("reminders_sent.json", []))
     for d, msg in REMINDERS.items():
         if today >= d and str(d) not in sent and today <= DEADLINE:
             alerts.append(msg)
             sent.add(str(d))
-    _save("reminders_sent.json", sorted(sent))
+    P.save("reminders_sent.json", sorted(sent))
+    P.save("last_run.json", {**summary, "result": res, "alerts": alerts})
 
-    if alerts:
-        title = "Expenses: " + ("action needed" if any(x.startswith(("Needs", "Error", "Gmail", "Excel", "Daily"))
-                                                        for x in alerts) else "update")
-        body = "\n".join(f"- {x}" for x in alerts) + (
-            f"\n\nTracker: rows to {a.snap.last_row}, £{a.snap.gross:,.2f} gross / £{a.snap.vat:,.2f} VAT.")
-        summary["notified"] = __import__("fonenova.notify", fromlist=["notify"]).notify(title, body, svc)
+    t = summary.get("totals", {})
+    P.log(f"{'cloud' if cfg.get('cloud') else 'pc'} run: {len(summary['candidates'])} new candidate(s), "
+          f"{len(summary['duplicates'])} duplicate(s), {len(summary['row_issues'])} tracker issue(s), "
+          f"logged {len(res.get('logged', []))}, alerts {len(alerts)}, gmail {summary.get('gmail')}")
+    if not alerts:
+        return None
+    urgent = any(x.startswith(("Needs", "Error", "Gmail", "Excel")) for x in alerts)
+    body = "\n".join(f"- {x}" for x in alerts)
+    if t:
+        body += (f"\n\nTracker: rows to {t.get('last_row')}, £{t.get('gross', 0):,.2f} gross / "
+                 f"£{t.get('vat', 0):,.2f} VAT.")
+    return ("Expenses: " + ("action needed" if urgent else "update"), body)
 
-    _save("last_run.json", summary)
-    _log(f"daily: gmail {summary['gmail']}, {len(new)} new candidate(s), {len(dups)} duplicate(s), "
-         f"{len(issues)} tracker issue(s), {'claude ran' if summary['claude'] else 'no claude run'}, "
-         f"{len(alerts)} alert(s)")
+
+# -- PC mode -------------------------------------------------------------------------------
+
+def run(today: date | None = None, use_claude: bool = True) -> dict:
+    cfg = load_config()
+    svc, gerr = None, None
+    try:
+        from .gmail import service
+        svc = service(SECRETS)
+    except Exception as e:
+        gerr = str(e)
+    summary = collect(cfg, svc, gerr, today)
+    result, extra = None, []
+    if summary["work_needed"] and use_claude:
+        if excel_lock_file(layouts(cfg)["septdec"].path):
+            extra.append("Excel has the live tracker open, so nothing could be logged. Close Excel; "
+                         "the next run will pick it up.")
+        else:
+            out = _run_claude(summary, Paths(Path(cfg["root"])))
+            result = out.get("result")
+            if out.get("error"):
+                extra.append(out["error"])
+    note = finalize(cfg, summary, result, extra, today)
+    if note:
+        from .notify import notify
+        summary["notified"] = notify(*note, gmail_svc=svc)
     return summary
 
 
-def _run_claude(summary: dict) -> dict:
+def _run_claude(summary: dict, P: Paths) -> dict:
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    work = STATE / f"work-{stamp}.json"
-    result = STATE / f"result-{stamp}.json"
-    _save(work.name, {**summary, "result_file": str(result)})
-    prompt = PROMPT.read_text(encoding="utf-8").replace("{WORK_FILE}", str(work)).replace(
-        "{RESULT_FILE}", str(result))
-    root = load_config()["root"]
-    cmd = [str(CLAUDE), "-p", prompt, "--permission-mode", "acceptEdits",
-           "--add-dir", root,
+    work = P.state / f"work-{stamp}.json"
+    result = P.state / f"result-{stamp}.json"
+    P.save(work.name, {**summary, "result_file": str(result)})
+    prompt = (PROMPT.read_text(encoding="utf-8").replace("{WORK_FILE}", str(work))
+              .replace("{RESULT_FILE}", str(result))
+              .replace("{CLI}", ".venv/Scripts/python.exe -m fonenova.cli"))
+    cmd = [str(CLAUDE), "-p", prompt, "--permission-mode", "acceptEdits", "--add-dir", str(P.root),
            "--allowedTools", "Read", "Glob", "Grep", "Write", "Edit",
            *[f"Bash(.venv/Scripts/python.exe -m fonenova.cli {c}:*)" for c in ALLOWED_CLI]]
     try:
         r = subprocess.run(cmd, cwd=REPO, capture_output=True, text=True, timeout=1800,
                            encoding="utf-8", errors="replace")
-        (STATE / f"claude-{stamp}.log").write_text(r.stdout + "\n--- stderr ---\n" + r.stderr,
-                                                   encoding="utf-8")
-        out = {"returncode": r.returncode}
+        (P.state / f"claude-{stamp}.log").write_text(r.stdout + "\n--- stderr ---\n" + r.stderr,
+                                                    encoding="utf-8")
         if result.exists():
-            out["result"] = json.loads(result.read_text(encoding="utf-8"))
-        else:
-            out["error"] = f"Claude run ended (code {r.returncode}) without writing a result file"
-        return out
+            return {"result": json.loads(result.read_text(encoding="utf-8"))}
+        return {"error": f"Claude run ended (code {r.returncode}) without writing a result file"}
     except Exception as e:
         return {"error": str(e)}

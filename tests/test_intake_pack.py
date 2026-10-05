@@ -19,7 +19,7 @@ def _mini(tmp_path, lays):
 def test_scan_flags_duplicates_and_new(tmp_path, lays):
     mini = _mini(tmp_path, lays)
     (mini["septdec"].receipts / "Scan from 2026-10-06.pdf").write_bytes(b"filed-v18")  # copy of a V18 file
-    inbox = tmp_path / "_inbox" / "gmail"
+    inbox = tmp_path / "Receipts Inbox" / "gmail"
     inbox.mkdir(parents=True)
     (inbox / "20261006_abcd_email.txt").write_text("new receipt")
     (inbox / "manifest.jsonl").write_text("{}")

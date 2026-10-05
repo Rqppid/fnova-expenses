@@ -13,7 +13,7 @@ Commands
   diff     BEFORE AFTER
   pack     [--out DIR]                      VAT return pack for the accountant (read-only)
   find     [--date DD.MM.YY] [--amount N] [--ref TEXT] [--days 3]   search both trackers
-  archive  --path FILE                      move an _inbox file to _inbox/processed/<date>/
+  archive  --path FILE                      move a Receipts Inbox file to Receipts Inbox/processed/<date>/
   gmail-auth                                one-time browser sign-in for the Gmail API
   daily    [--no-claude]                    run the unattended daily routine
 Write commands accept --path to operate on a copy instead of the live file.
@@ -36,6 +36,8 @@ def _vat_flag(v: str | None) -> str | None:
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="fonenova")
+    ap.add_argument("--mirror", help="cloud mode: operate on this OneDrive mirror (from `cloud prep`) "
+                                     "instead of the local VAT RETURNS folder")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     a = sub.add_parser("audit"); a.add_argument("--out"); a.add_argument("--matches", action="store_true")
@@ -81,6 +83,10 @@ def main(argv=None) -> int:
 
     args = ap.parse_args(argv)
     cfg = load_config()
+    if args.mirror:
+        from .cloud import install_mirror_resolver
+        cfg["root"] = str(Path(args.mirror))
+        install_mirror_resolver(Path(args.mirror))
     lays = layouts(cfg)
 
     if args.cmd == "audit":
