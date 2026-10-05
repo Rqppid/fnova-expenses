@@ -25,6 +25,8 @@ DEADLINE = date(2026, 11, 7)
 REMINDERS = {date(2026, 10, 31): "VAT return due 7 Nov (1 week). Pack: python -m fonenova.cli pack",
              date(2026, 11, 5): "VAT return due in 2 days (7 Nov). Send the pack to the accountant."}
 CLAUDE = Path.home() / ".local" / "bin" / "claude.exe"
+# Commands the unattended run may use. Deliberately excludes delete: removing rows is Hamza's call.
+ALLOWED_CLI = ("find", "add", "complete", "file", "archive", "verify", "audit", "status")
 
 
 def _load(name: str, default):
@@ -76,7 +78,8 @@ def run(today: date | None = None, use_claude: bool = True) -> dict:
     # 3. Live tracker health
     from .audit import audit_tracker
     a = audit_tracker(lays["septdec"])
-    issues = [f"row {r}: {k}" for k, r, _ in a.row_issues] + a.structure
+    known = {int(k) for k in cfg.get("known_issues", {}).get("septdec", {})}
+    issues = [f"row {r}: {k}" for k, r, _ in a.row_issues if r not in known] + a.structure
     summary["row_issues"] = issues
     summary["totals"] = {"last_row": a.snap.last_row, "gross": a.snap.gross, "vat": a.snap.vat}
 
@@ -137,7 +140,7 @@ def _run_claude(summary: dict) -> dict:
     cmd = [str(CLAUDE), "-p", prompt, "--permission-mode", "acceptEdits",
            "--add-dir", root,
            "--allowedTools", "Read", "Glob", "Grep", "Write", "Edit",
-           "Bash(.venv/Scripts/python.exe -m fonenova.cli:*)"]
+           *[f"Bash(.venv/Scripts/python.exe -m fonenova.cli {c}:*)" for c in ALLOWED_CLI]]
     try:
         r = subprocess.run(cmd, cwd=REPO, capture_output=True, text=True, timeout=1800,
                            encoding="utf-8", errors="replace")

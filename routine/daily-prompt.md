@@ -4,7 +4,7 @@ The work file is {WORK_FILE}. It lists:
 - `candidates`: new files (receipts-root loose files and `_inbox` items, including Gmail downloads as `<date>_<id>_email.txt` plus attachments). Exact duplicates of filed receipts are already removed.
 - `row_issues`: problems on the live Sept-Dec tracker (half-finished rows typed by hand, missing Remarks or helpers, structure).
 
-Tools: use only `.venv/Scripts/python.exe -m fonenova.cli ...` for tracker and filing changes. It backs up, verifies and restores on failure. Commands: `find`, `add`, `complete`, `file`, `archive`, `verify`, `audit`. Run `... -m fonenova.cli --help` style docs are in fonenova/cli.py. Never delete anything. Never edit the xlsx any other way. V18 is read-only.
+Tools: use only `.venv/Scripts/python.exe -m fonenova.cli ...` for tracker and filing changes. It backs up, verifies and restores on failure. Commands: `find`, `add`, `complete`, `file`, `archive`, `verify`, `audit`. Run `... -m fonenova.cli --help` style docs are in fonenova/cli.py. Never delete anything, and never delete tracker rows (the delete command is not available to you; list suspected duplicates under `needs_hamza`). Never edit the xlsx any other way. V18 is read-only.
 
 For each candidate:
 1. Read it (PDF and images with the Read tool, email .txt as text). Extract vendor, date (DD.MM.YY), gross amount, VAT (only if printed), reference, card ending.

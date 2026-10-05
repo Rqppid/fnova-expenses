@@ -5,3 +5,6 @@
 - Python 3.12.10 installed; repo scaffolded; audit() working. No tracker writes.
 - 2026-10-05 22:11 daily: gmail {'error': 'No valid Gmail token. Run: python -m fonenova.cli gmail-auth'}, 0 new candidate(s), 0 duplicate(s), 1 tracker issue(s), no claude run, 1 alert(s)
 - 2026-10-05 22:20 Phase 2-4 built: CLI, audit, filing, verify, diff (no feature loss), pack (May-Oct £43,316.64 / VAT £2,334.65), daily routine (dry run OK, Gmail not yet authorised). Live tracker NOT modified: deletion of duplicate row 5 blocked by permission policy, awaiting Hamza.
+- 2026-10-05 22:17 Sept-Dec row 5 (Tesco 01.09.26 £5.50, duplicate of V18 r313) deleted via cli delete (run by Hamza). Backup _backups/2026-10-05_221719_delete. Verified: rows to 69, £8,946.09 / £423.06 / £8,523.03, no feature loss.
+- 2026-10-05 22:24 daily: gmail {'error': 'No valid Gmail token. Run: python -m fonenova.cli gmail-auth'}, 0 new candidate(s), 0 duplicate(s), 0 tracker issue(s), no claude run, 0 alert(s)
+- 2026-10-05 22:25 Cleanup: 13 exact-duplicate receipts moved to VAT RETURNS/_duplicates-review/septdec (not deleted). Remarks citations updated to current file names on rows 15,16,17,22,25,37,38,43,50,61,62 (backup 2026-10-05_222346_remarks). Daily task registered (21:30). Accountant questions drafted in Gmail (not sent).

@@ -13,6 +13,12 @@ backup_dir = '_backups'
 "Flat Deposit+Rents/Flat-Rent-03.08.26-TransferConfirmation.pdf" = "August rent, V18 period, not this tracker"
 "Flat Deposit+Rents/Invoice-PP22862-20260803.pdf" = "Old-name copy, August rent"
 "Flat Deposit+Rents/RENT+DEPOSIT- TransferConfirmation (03-08-26).pdf" = "Old-name copy, August rent"
+"Tesco/Tesco-01.09.26.pdf" = "Second scan of the 01.09.26 £5.50 receipt logged in V18 row 313 (auth 136898); Sept-Dec duplicate row removed 05.10.26"
+"EsyJet-Flights/WhatsApp Image 2026-09-03 at 12.36.41.jpeg" = "Supporting image for the EasyJet KD9GKD2 flight row (03.09.26)"
 
 [pending.v18]
 "B&Q-30.08.26/B&Q-30.08.26.jpeg" = "B&Q £6.62, deliberately not logged (standing decision 13)"
+
+# Tracker issues already known and waiting on Hamza. The daily run does not act on these rows.
+[known_issues.septdec]
+# "<row>" = "reason"   (row numbers shift when rows are added or deleted; keep this list short-lived)

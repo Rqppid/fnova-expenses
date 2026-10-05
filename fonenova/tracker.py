@@ -311,3 +311,26 @@ def complete_row(layout: Layout, backup_root: Path, *, row: int, path: Path | No
     vat_delta = (float(new_vat) if new_flag == "VAT-Yes" else 0.0) - cur_vat
     return _transaction(layout, backup_root, "complete", edit, expect_last_delta=0,
                         expect_gross_delta=gross_delta, expect_vat_delta=vat_delta, path=path)
+
+
+def update_remarks(layout: Layout, backup_root: Path, changes: dict[int, str], *,
+                   expect_vendors: dict[int, str] | None = None, path: Path | None = None) -> WriteResult:
+    """Rewrite the Remarks of several rows in one transaction. Amounts and VAT are untouched.
+
+    expect_vendors guards against row numbers having shifted since the changes were prepared.
+    """
+    def edit(wb, before):
+        ws = wb[layout.log_sheet]
+        rows = {r.r: r for r in before.rows}
+        for r, text in changes.items():
+            if r not in rows:
+                raise TrackerError(f"Row {r} is not a data row")
+            if expect_vendors and expect_vendors.get(r, "").lower() != rows[r].vendor.lower():
+                raise TrackerError(f"Row {r} is {rows[r].vendor!r}, expected {expect_vendors.get(r)!r}")
+            if not text.strip():
+                raise TrackerError(f"Empty Remarks for row {r}")
+            ws[f"{COL_REMARKS}{r}"] = text
+        return f"updated Remarks on rows {sorted(changes)}"
+
+    return _transaction(layout, backup_root, "remarks", edit, expect_last_delta=0,
+                        expect_gross_delta=0.0, expect_vat_delta=0.0, path=path)
