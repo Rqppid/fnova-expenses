@@ -2,7 +2,8 @@ Fone Nova expense check (cloud; nightly, and instantly after a WhatsApp upload).
 
 1. Setup (the machine's `pip` and `python` can point at different Python versions, so always use a
    fresh virtual environment and its python):
-   `python3 -m venv /tmp/venv && /tmp/venv/bin/python -m pip install -q -r requirements.txt`
+   `python3 -m venv /tmp/venv && /tmp/venv/bin/python -m pip install -q -r requirements.txt && /tmp/venv/bin/python -m pip install -q --no-deps -e .`
+   (the last part makes `fonenova` importable from any folder)
    Use `/tmp/venv/bin/python` for EVERY python command below.
 2. Prepare: `/tmp/venv/bin/python -m fonenova.cloud prep --dest /tmp/vat`
    It mirrors the OneDrive "VAT RETURNS" folder to /tmp/vat, fetches receipt emails into the

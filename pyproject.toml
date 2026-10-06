@@ -21,3 +21,6 @@ entrypoint = "api.whatsapp:handler"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.setuptools]
+packages = ["fonenova"]
