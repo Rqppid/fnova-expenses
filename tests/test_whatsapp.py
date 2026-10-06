@@ -91,7 +91,7 @@ class Store:
 
 def test_trigger_is_debounced():
     s, fired = Store(), []
-    fire = lambda r: fired.append(r) or True  # noqa: E731
+    fire = lambda r: (fired.append(r) or True, "HTTP 200")  # noqa: E731
     assert wa.maybe_trigger(s, "a", now=1000, fire=fire) is True
     assert wa.maybe_trigger(s, "b", now=1100, fire=fire) is False      # inside 3 minutes
     assert wa.maybe_trigger(s, "c", now=1000 + wa.DEBOUNCE_SECONDS + 1, fire=fire) is True
@@ -109,4 +109,28 @@ def test_text_message_gets_a_reply():
 def test_trigger_skips_placeholder(monkeypatch):
     monkeypatch.setenv("ROUTINE_TRIGGER_URL", "PASTE_FROM_ROUTINE_API_TRIGGER")
     monkeypatch.setenv("ROUTINE_TRIGGER_TOKEN", "PASTE_FROM_ROUTINE_API_TRIGGER")
-    assert wa.fire_trigger("x") is False
+    assert wa.fire_trigger("x")[0] is False
+
+
+def test_failed_trigger_is_recorded_and_retried():
+    s = Store()
+    assert wa.maybe_trigger(s, "a", now=1000, fire=lambda r: (False, "HTTP 400 bad")) is False
+    st = s.get(wa.STATE_DOC)
+    assert st["last_result"]["detail"] == "HTTP 400 bad" and st["last_trigger"] == 0
+    assert wa.maybe_trigger(s, "b", now=1010, fire=lambda r: (True, "HTTP 200")) is True   # not debounced
+
+
+def test_fire_sends_routine_headers(monkeypatch):
+    monkeypatch.setenv("ROUTINE_TRIGGER_URL", "https://api.anthropic.com/v1/claude_code/routines/trig_x/fire")
+    monkeypatch.setenv("ROUTINE_TRIGGER_TOKEN", "tok")
+    seen = {}
+
+    class R:
+        ok, status_code, text = True, 200, "{}"
+
+    def post(url, **kw):
+        seen.update(kw["headers"], url=url)
+        return R()
+    monkeypatch.setattr(wa.requests, "post", post)
+    assert wa.fire_trigger("x") == (True, "HTTP 200 {}")
+    assert seen["anthropic-beta"].startswith("experimental-cc-routine") and seen["Authorization"] == "Bearer tok"

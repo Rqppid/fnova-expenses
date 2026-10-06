@@ -429,7 +429,7 @@ def main(argv=None) -> int:
         retriggered = False
         if late or rerun:
             from .whatsapp import fire_trigger
-            retriggered = fire_trigger(f"{len(late)} file(s) arrived during the previous run")
+            retriggered = fire_trigger(f"{len(late)} file(s) arrived during the previous run")[0]
         print(json.dumps({"push": report, "notified": bool(note), "whatsapp_replies": replies,
                           "late_files": late, "retriggered": retriggered}, indent=2))
         return 1 if report["aborted"] else 0

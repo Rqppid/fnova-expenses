@@ -152,17 +152,22 @@ def _upload_once(od, rel: str, data: bytes) -> bool:
 
 # -- instant runs ----------------------------------------------------------------------------
 
-def fire_trigger(reason: str) -> bool:
-    url, tok = os.environ.get("ROUTINE_TRIGGER_URL", ""), os.environ.get("ROUTINE_TRIGGER_TOKEN", "")
+ROUTINE_HEADERS = {"anthropic-version": "2023-06-01",
+                   "anthropic-beta": "experimental-cc-routine-2026-04-01"}
+
+
+def fire_trigger(reason: str) -> tuple[bool, str]:
+    """Start the cloud routine via its API trigger. Returns (started, detail) for diagnostics."""
+    url, tok = os.environ.get("ROUTINE_TRIGGER_URL", "").strip(), os.environ.get("ROUTINE_TRIGGER_TOKEN", "").strip()
     if not url.startswith("https://") or not tok or "PASTE" in url or "PASTE" in tok:
-        return False                          # instant runs not configured yet: the nightly run picks it up
+        return False, "not configured (ROUTINE_TRIGGER_URL/TOKEN missing or placeholder)"
     try:
-        r = requests.post(url, timeout=30, headers={"Authorization": f"Bearer {tok}",
-                                                    "Content-Type": "application/json"},
-                          json={"text": f"Instant run: {reason}"})
-        return r.ok
-    except requests.RequestException:
-        return False
+        r = requests.post(url, timeout=30, json={"text": f"Instant run: {reason}"},
+                          headers={"Authorization": f"Bearer {tok}", "Content-Type": "application/json",
+                                   **ROUTINE_HEADERS})
+        return r.ok, f"HTTP {r.status_code} {r.text[:200]}"
+    except requests.RequestException as e:
+        return False, f"request failed: {e}"
 
 
 def maybe_trigger(store, reason: str, now: float | None = None, fire=fire_trigger) -> bool:
@@ -174,4 +179,9 @@ def maybe_trigger(store, reason: str, now: float | None = None, fire=fire_trigge
         return False
     state["last_trigger"] = now
     store.put(STATE_DOC, state)
-    return fire(reason)
+    ok, detail = fire(reason)
+    state["last_result"] = {"ok": ok, "detail": detail, "at": now}
+    if not ok:
+        state["last_trigger"] = 0            # failed: let the next upload try again straight away
+    store.put(STATE_DOC, state)
+    return ok
