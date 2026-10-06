@@ -32,3 +32,8 @@ onedrive_base = "Desktop/VAT RETURNS"
 # Meta test number +1 555 631 0829 (not secrets; the access token and app secret live only in Vercel / the cloud env)
 phone_number_id = "1293187523886245"
 business_account_id = "931178819750215"
+# People allowed to send receipts (international format). Mirrors WA_ALLOWED in Vercel and the cloud env.
+allowed = { Hamza = "447359818591", Wahidullah = "447852402537" }
+# Company SIM 07949922872 (verified on Facebook). Candidate to replace the Meta test number as the bot's
+# own number: it must NOT be registered on the WhatsApp app when added in WhatsApp Manager.
+company_number = "447949922872"
