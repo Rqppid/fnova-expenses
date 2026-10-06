@@ -96,3 +96,17 @@ def test_trigger_is_debounced():
     assert wa.maybe_trigger(s, "b", now=1100, fire=fire) is False      # inside 3 minutes
     assert wa.maybe_trigger(s, "c", now=1000 + wa.DEBOUNCE_SECONDS + 1, fire=fire) is True
     assert fired == ["a", "c"]
+
+
+def test_text_message_gets_a_reply():
+    d, sent = Drive(), []
+    txt = {"from": "447700900000", "id": "wamid.TXT0000000A", "timestamp": "1791288000", "type": "text",
+           "text": {"body": "hello"}}
+    wa.handle(payload(txt), d, send=lambda n, t: sent.append(t), fetch=lambda i: (b"", ""))
+    assert len(sent) == 1 and sent[0].startswith("Noted")
+
+
+def test_trigger_skips_placeholder(monkeypatch):
+    monkeypatch.setenv("ROUTINE_TRIGGER_URL", "PASTE_FROM_ROUTINE_API_TRIGGER")
+    monkeypatch.setenv("ROUTINE_TRIGGER_TOKEN", "PASTE_FROM_ROUTINE_API_TRIGGER")
+    assert wa.fire_trigger("x") is False

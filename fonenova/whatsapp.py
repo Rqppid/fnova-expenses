@@ -122,8 +122,13 @@ def handle(payload: dict, od, send=send_text, fetch=download_media) -> list[dict
             created = _upload_once(od, f"{INBOX}/{name}", data)
             if caption:
                 _upload_once(od, f"{INBOX}/{name.rsplit('.', 1)[0]}_note.txt", caption.encode("utf-8"))
-            if created and kind != "text":
-                send(num, f"Got it ({name.split('_', 3)[-1]}). Logging it now; I'll message you when it's in.")
+            if created:
+                if kind == "text":
+                    send(num, "Noted. I'll use this as the description for the receipt you send with it. "
+                              "Send a photo or PDF of the receipt (or a bank statement / FX confirmation) to log it.")
+                else:
+                    send(num, f"Got it ({name.split('_', 3)[-1]}). It will be logged, filed and added to the "
+                              "VAT tracker; I'll message you when it's in.")
             log.append({"from": label, "file": name, "status": "saved" if created else "duplicate (retry)"})
         except Exception as e:  # keep going for the other messages
             log.append({"from": label, "status": f"error: {e}"})
@@ -148,13 +153,16 @@ def _upload_once(od, rel: str, data: bytes) -> bool:
 # -- instant runs ----------------------------------------------------------------------------
 
 def fire_trigger(reason: str) -> bool:
-    url, tok = os.environ.get("ROUTINE_TRIGGER_URL"), os.environ.get("ROUTINE_TRIGGER_TOKEN")
-    if not url or not tok:
+    url, tok = os.environ.get("ROUTINE_TRIGGER_URL", ""), os.environ.get("ROUTINE_TRIGGER_TOKEN", "")
+    if not url.startswith("https://") or not tok or "PASTE" in url or "PASTE" in tok:
+        return False                          # instant runs not configured yet: the nightly run picks it up
+    try:
+        r = requests.post(url, timeout=30, headers={"Authorization": f"Bearer {tok}",
+                                                    "Content-Type": "application/json"},
+                          json={"text": f"Instant run: {reason}"})
+        return r.ok
+    except requests.RequestException:
         return False
-    r = requests.post(url, timeout=30, headers={"Authorization": f"Bearer {tok}",
-                                                "Content-Type": "application/json"},
-                      json={"text": f"Instant run: {reason}"})
-    return r.ok
 
 
 def maybe_trigger(store, reason: str, now: float | None = None, fire=fire_trigger) -> bool:
