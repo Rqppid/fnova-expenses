@@ -5,3 +5,4 @@ __pycache__/
 *.xlsx
 out/
 state/
+*.egg-info/
