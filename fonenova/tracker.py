@@ -156,9 +156,18 @@ def _transaction(layout: Layout, backup_root: Path, label: str, edit, *,
 
     note = edit(wb, before)
 
-    tmp = path.with_name(path.stem + ".~tmp.xlsx")
-    wb.save(tmp)
-    os.replace(tmp, path)
+    # Save to a temp file outside the synced folder, then overwrite the tracker IN PLACE.
+    # Renaming a new file over it (os.replace) breaks OneDrive's link to the file, after which
+    # OneDrive silently stops syncing it (seen 5-6 Oct 2026). The backup covers a failed copy.
+    import tempfile
+    fd, tmpname = tempfile.mkstemp(suffix=".xlsx")
+    os.close(fd)
+    tmp = Path(tmpname)
+    try:
+        wb.save(tmp)
+        shutil.copyfile(tmp, path)
+    finally:
+        tmp.unlink(missing_ok=True)
 
     res = verify(path, layout,
                  expected_last_row=before.last_row + expect_last_delta,
