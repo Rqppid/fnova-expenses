@@ -52,7 +52,8 @@ class handler(BaseHTTPRequestHandler):
                 return self._send(200)                  # delivery/read receipts: nothing to do
             od, store = _onedrive_and_store()
             log = wa.handle(payload, od)
-            if any(x.get("status") == "saved" for x in log):
+            # Only receipts/documents start a run; text notes ride along with the next one.
+            if any(x.get("status") == "saved" and not str(x.get("file", "")).endswith("note.txt") for x in log):
                 wa.maybe_trigger(store, "new WhatsApp upload")
             print(json.dumps(log))
         except Exception:
