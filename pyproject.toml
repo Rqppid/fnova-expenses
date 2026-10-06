@@ -1,0 +1,23 @@
+[project]
+name = "fonenova-expenses"
+version = "0.1.0"
+description = "Fone Nova Ltd expense tracking, filing and WhatsApp intake"
+requires-python = ">=3.12"
+dependencies = [
+    "google-api-python-client==2.201.0",
+    "google-auth==2.60.0",
+    "google-auth-httplib2==0.4.4",
+    "google-auth-oauthlib==1.5.0",
+    "openpyxl==3.1.5",
+    "pdfplumber==0.11.10",
+    "pillow==12.3.0",
+    "pillow_heif==1.8.0",
+    "requests==2.34.2",
+]
+
+[tool.vercel]
+# The WhatsApp webhook (Vercel serverless function).
+entrypoint = "api.whatsapp:handler"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
