@@ -27,3 +27,8 @@ backup_dir = '_backups'
 # Application (client) ID from the Azure app registration (not a secret). Filled in during setup.
 ms_client_id = "5260e8c6-8f4e-4565-bf67-cb16aec78746"
 onedrive_base = "Desktop/VAT RETURNS"
+
+[whatsapp]
+# Meta test number +1 555 631 0829 (not secrets; the access token and app secret live only in Vercel / the cloud env)
+phone_number_id = "1293187523886245"
+business_account_id = "931178819750215"
