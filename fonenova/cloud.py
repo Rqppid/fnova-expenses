@@ -377,7 +377,8 @@ def main(argv=None) -> int:
         P = Paths(dest)
         result = P.state / f"result-{stamp}.json"
         summary["result_file"] = str(result)
-        summary["cli"] = f"python -m fonenova.cli --mirror \"{dest}\""
+        import sys as _sys
+        summary["cli"] = f"{_sys.executable} -m fonenova.cli --mirror \"{dest}\""
         P.save(f"work-{stamp}.json", summary)
         (dest / META / "current.json").write_text(json.dumps(
             {"work": str(P.state / f"work-{stamp}.json"), "result": str(result)}), encoding="utf-8")
