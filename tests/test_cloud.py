@@ -194,3 +194,11 @@ def test_late_inbox_file_detected(drive, tmp_path):
     drive._put("Receipts Inbox/whatsapp/20261006-1201_Hamza_abc_image.jpg", b"jpeg")
     drive._put("Receipts Inbox/processed/2026-10-06/old.jpg", b"old")
     assert cloud.new_inbox_files(drive, dest) == ["Receipts Inbox/whatsapp/20261006-1201_Hamza_abc_image.jpg"]
+
+
+def test_cloud_mode_flag_does_not_clobber_cloud_settings(tmp_path):
+    from fonenova.layout import load_config
+    cfg = load_config()
+    cfg.update(root=str(tmp_path), cloud_mode=True)
+    assert cloud._base(cfg) == "Desktop/VAT RETURNS"
+    assert cfg["cloud"]["ms_client_id"]

@@ -115,7 +115,7 @@ def finalize(cfg: dict, summary: dict, result: dict | None, extra_errors=(),
     P.save("last_run.json", {**summary, "result": res, "alerts": alerts})
 
     t = summary.get("totals", {})
-    P.log(f"{'cloud' if cfg.get('cloud') else 'pc'} run: {len(summary['candidates'])} new candidate(s), "
+    P.log(f"{'cloud' if cfg.get('cloud_mode') else 'pc'} run: {len(summary['candidates'])} new candidate(s), "
           f"{len(summary['duplicates'])} duplicate(s), {len(summary['row_issues'])} tracker issue(s), "
           f"logged {len(res.get('logged', []))}, alerts {len(alerts)}, gmail {summary.get('gmail')}")
     if not alerts:

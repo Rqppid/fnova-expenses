@@ -349,7 +349,7 @@ def main(argv=None) -> int:
         return 0
 
     dest = Path(args.dest).resolve()
-    cfg.update(root=str(dest), cloud=True)
+    cfg.update(root=str(dest), cloud_mode=True)   # not "cloud": that key holds the [cloud] settings
 
     if args.cmd == "prep":
         creds = _google()
