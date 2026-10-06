@@ -33,9 +33,17 @@ class FakeDrive:
     def _by_id(self, item_id):
         return next(r for r, v in self.files.items() if v[0] == item_id)
 
-    def list_tree(self, skip_dirs=frozenset()):
+    def item(self, rel):
+        v = self.files.get(rel)
+        return {"id": v[0], "eTag": v[1]} if v else None
+
+    def list_tree(self, skip_dirs=frozenset(), start=""):
         out, folders = [], set()
         for rel, (i, e, d) in self.files.items():
+            if start and not rel.startswith(start.rstrip("/") + "/"):
+                continue
+            if any(f"/{s}/" in f"/{rel}" for s in skip_dirs):
+                continue
             parts = rel.split("/")
             for k in range(1, len(parts)):
                 folders.add("/".join(parts[:k]))
@@ -160,3 +168,29 @@ def test_never_deletes_and_refuses_zero_copies(drive, tmp_path):
     rep = cloud.push(drive, dest)
     assert "Receipts Inbox/Scan dup.pdf" in drive.files and f"{RECEIPTS}/Lidl/copy.pdf" not in drive.files
     assert all(c[0] != "replace" or c[1] != V18 for c in drive.calls)
+
+
+def test_lock_is_exclusive_and_records_rerun(drive):
+    assert cloud.acquire_lock(drive, now=1000.0) is True
+    assert cloud.acquire_lock(drive, now=1100.0) is False          # second run backs off
+    import json
+    assert json.loads(drive.files[cloud.LOCK][2])["rerun"] is True
+    assert cloud.release_lock(drive) is True                        # finish learns a rerun is due
+    assert json.loads(drive.files[cloud.LOCK][2])["state"] == "idle"
+    assert cloud.acquire_lock(drive, now=1200.0) is True            # free again
+    assert cloud.acquire_lock(drive, now=1200.0 + cloud.LOCK_STALE_SECONDS + 1) is True   # stale lock
+
+
+def test_lock_file_is_not_mirrored(drive, tmp_path):
+    cloud.acquire_lock(drive, now=1.0)
+    cloud.pull(drive, tmp_path / "m")
+    assert not (tmp_path / "m" / cloud.LOCK).exists()
+
+
+def test_late_inbox_file_detected(drive, tmp_path):
+    dest = tmp_path / "m"
+    cloud.pull(drive, dest)
+    assert cloud.new_inbox_files(drive, dest) == []
+    drive._put("Receipts Inbox/whatsapp/20261006-1201_Hamza_abc_image.jpg", b"jpeg")
+    drive._put("Receipts Inbox/processed/2026-10-06/old.jpg", b"old")
+    assert cloud.new_inbox_files(drive, dest) == ["Receipts Inbox/whatsapp/20261006-1201_Hamza_abc_image.jpg"]

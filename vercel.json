@@ -1,0 +1,5 @@
+{
+  "functions": {
+    "api/whatsapp.py": { "maxDuration": 60, "excludeFiles": "{tests/**,docs/**,out/**,state/**,secrets/**,.venv/**}" }
+  }
+}

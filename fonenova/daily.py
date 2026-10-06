@@ -27,7 +27,7 @@ REMINDERS = {date(2026, 10, 31): "VAT return due 7 Nov (1 week). Pack: python -m
              date(2026, 11, 5): "VAT return due in 2 days (7 Nov). Send the pack to the accountant."}
 CLAUDE = Path.home() / ".local" / "bin" / "claude.exe"
 # Commands the unattended run may use. Deliberately excludes delete: removing rows is Hamza's call.
-ALLOWED_CLI = ("find", "add", "complete", "file", "archive", "verify", "audit", "status")
+ALLOWED_CLI = ("find", "add", "complete", "file", "statement", "fx", "archive", "verify", "audit", "status")
 
 
 class Paths:
@@ -102,6 +102,7 @@ def finalize(cfg: dict, summary: dict, result: dict | None, extra_errors=(),
     alerts += [f"Logged: {x}" for x in res.get("logged", [])]
     alerts += [f"Fixed: {x}" for x in res.get("completed", [])]
     alerts += [f"Needs you: {x}" for x in res.get("needs_hamza", [])]
+    alerts += [f"Receipt missing (logged from bank statement): {x}" for x in res.get("missing_receipts", [])]
     alerts += [f"Error: {x}" for x in list(res.get("errors", [])) + list(extra_errors)]
     P.save("last_fingerprint.json", summary.get("_fingerprint", []))
 

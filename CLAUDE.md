@@ -64,3 +64,10 @@ Always use the tooling (`python -m fonenova.cli ...`) for writes. It backs up, w
 - Nightly cloud routine: `routine/cloud-routine.md` -> `python -m fonenova.cloud prep --dest /tmp/vat`, work via `python -m fonenova.cli --mirror /tmp/vat ...`, then `python -m fonenova.cloud finish --dest /tmp/vat`.
 - Mirror rules and safety: see the docstring of `fonenova/cloud.py`. Setup: `docs/cloud-setup.md`.
 - Run state and run log: `VAT RETURNS\_automation\` (shared by PC and cloud runs). Never run the PC task and the cloud routine on the same night once cloud is live.
+
+## Capture channels and conventions (06.10.26)
+- WhatsApp bot (Meta test number for now): Hamza and Wahidullah send photos, PDFs, Revolut statements (CSV preferred) or FX confirmations. Files land in `Receipts Inbox/whatsapp/`, an instant cloud run logs them and replies in the chat. Code: `fonenova/whatsapp.py`, webhook `api/whatsapp.py` (Vercel). Setup: `docs/whatsapp-setup.md`.
+- Photos are filed as clean greyscale PDFs (`file --to-pdf`, `fonenova/imaging.py`), never 1-bit black and white. Originals are kept in `Receipts Inbox/processed/<date>/`.
+- Bank statements: `statement --path FILE [--log]` (`fonenova/statements.py`). Unmatched card payments and fees are logged VAT-No with "RECEIPT MISSING"; a later receipt completes that row instead of adding one. Transfers, top-ups, refunds and wholesale are never logged automatically.
+- FX: `fx` records EUR->GBP conversions on the "FX Exchanges (Reference)" sheet (not in VAT totals); the fee is an expense row VAT-No.
+- One run at a time: `_automation/run.lock` in OneDrive (updated in place, never deleted).

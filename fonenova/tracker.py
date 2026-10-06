@@ -179,44 +179,117 @@ def _transaction(layout: Layout, backup_root: Path, label: str, edit, *,
 
 # -- public operations ---------------------------------------------------------------
 
+def _insert_row(wb, layout: Layout, r: dict) -> int:
+    """Write one expense row where the Total row is and move Total/Net Total down. Returns row."""
+    ws = wb[layout.log_sheet]
+    t = find_total_row(ws, layout)
+    _check_total_rows_plain(ws, layout, t)
+    if _row_values(ws, t + 2):
+        raise TrackerError(f"Row {t + 2} below Net Total is not empty; check for hand-typed rows")
+    data_snap = _row_snapshot(ws, t - 1)
+    total_snap = _row_snapshot(ws, t)
+    net_snap = _row_snapshot(ws, t + 1)
+
+    new = t
+    _apply_row(ws, new, data_snap, with_values=False)
+    _apply_row(ws, new + 1, total_snap, with_values=False)
+    _apply_row(ws, new + 2, net_snap, with_values=False)
+    values = {COL_DATE: r["date"], COL_VENDOR: r["vendor"], COL_DESC: r["desc"],
+              COL_AMOUNT: float(r["amount"]), COL_REF: r["ref"],
+              COL_RECEIPT: r.get("receipt", "Receipt:Yes"), COL_VATFLAG: r["vat_flag"],
+              COL_VAT: float(r["vat_amount"]) if r["vat_flag"] == "VAT-Yes" else None,
+              COL_REMARKS: r["remarks"]}
+    for col, v in values.items():
+        ws[f"{col}{new}"] = v
+    _write_helpers(ws, layout, new)
+    _write_totals(ws, layout, new + 1, new)
+    _rewrite_sumifs(wb, layout, new)
+    _extend_validations(ws, new)
+    return new
+
+
+def _check_new(r: dict) -> None:
+    _validate_fields(r["date"], r["amount"], r["vat_flag"], r.get("vat_amount"))
+    if not str(r.get("remarks", "")).strip():
+        raise TrackerError("Remarks are required")
+
+
 def add_row(layout: Layout, backup_root: Path, *, date: str, vendor: str, desc: str,
             amount: float, ref: str, vat_flag: str, vat_amount: float | None, remarks: str,
             path: Path | None = None) -> WriteResult:
     """Append an expense row directly above the Total row."""
-    _validate_fields(date, amount, vat_flag, vat_amount)
-    if not remarks.strip():
-        raise TrackerError("Remarks are required")
+    row = dict(date=date, vendor=vendor, desc=desc, amount=amount, ref=ref, vat_flag=vat_flag,
+               vat_amount=vat_amount, remarks=remarks)
+    _check_new(row)
 
     def edit(wb, before):
-        ws = wb[layout.log_sheet]
-        t = find_total_row(ws, layout)
-        _check_total_rows_plain(ws, layout, t)
-        if _row_values(ws, t + 2):
-            raise TrackerError(f"Row {t + 2} below Net Total is not empty; check for hand-typed rows")
-        data_snap = _row_snapshot(ws, t - 1)
-        total_snap = _row_snapshot(ws, t)
-        net_snap = _row_snapshot(ws, t + 1)
-
-        new = t
-        _apply_row(ws, new, data_snap, with_values=False)
-        _apply_row(ws, new + 1, total_snap, with_values=False)
-        _apply_row(ws, new + 2, net_snap, with_values=False)
-        values = {COL_DATE: date, COL_VENDOR: vendor, COL_DESC: desc, COL_AMOUNT: float(amount),
-                  COL_REF: ref, COL_RECEIPT: "Receipt:Yes", COL_VATFLAG: vat_flag,
-                  COL_VAT: float(vat_amount) if vat_flag == "VAT-Yes" else None,
-                  COL_REMARKS: remarks}
-        for col, v in values.items():
-            ws[f"{col}{new}"] = v
-        _write_helpers(ws, layout, new)
-        _write_totals(ws, layout, new + 1, new)
-        _rewrite_sumifs(wb, layout, new)
-        _extend_validations(ws, new)
+        new = _insert_row(wb, layout, row)
         return f"added row {new}: {date} {vendor} £{amount:.2f} {vat_flag}"
 
     return _transaction(layout, backup_root, "add", edit, expect_last_delta=1,
                         expect_gross_delta=float(amount),
                         expect_vat_delta=float(vat_amount) if vat_flag == "VAT-Yes" else 0.0,
                         path=path)
+
+
+def add_rows(layout: Layout, backup_root: Path, rows: list[dict], *, fx: list[dict] = (),
+             label: str = "add-batch", path: Path | None = None) -> WriteResult:
+    """Append several expense rows (and optional FX-sheet entries) in ONE backed-up, verified write.
+
+    rows: dicts with date, vendor, desc, amount, ref, vat_flag, vat_amount, remarks[, receipt].
+    fx:   dicts with date, eur, gbp, rate, fee, note (see append_fx).
+    """
+    for r in rows:
+        _check_new(r)
+    if not rows and not fx:
+        raise TrackerError("Nothing to add")
+
+    def edit(wb, before):
+        added = [_insert_row(wb, layout, r) for r in rows]
+        for f in fx:
+            append_fx(wb, **f)
+        return f"added rows {added}" + (f" and {len(fx)} FX entr{'y' if len(fx) == 1 else 'ies'}" if fx else "")
+
+    return _transaction(layout, backup_root, label, edit, expect_last_delta=len(rows),
+                        expect_gross_delta=round(sum(float(r["amount"]) for r in rows), 2),
+                        expect_vat_delta=round(sum(float(r["vat_amount"]) for r in rows
+                                                   if r["vat_flag"] == "VAT-Yes"), 2),
+                        path=path)
+
+
+FX_SHEET = "FX Exchanges (Reference)"
+FX_PLACEHOLDER = "No FX exchanges recorded yet"
+
+
+def fx_entries(wb) -> set[tuple[str, float]]:
+    """{(DD.MM.YY, EUR amount)} already on the FX reference sheet."""
+    ws = wb[FX_SHEET]
+    out = set()
+    for r in range(1, ws.max_row + 1):
+        d, e = ws.cell(r, 1).value, ws.cell(r, 2).value
+        if isinstance(d, str) and parse_ddmmyy(d) and isinstance(e, (int, float)):
+            out.add((d, round(float(e), 2)))
+    return out
+
+
+def append_fx(wb, *, date: str, eur: float, gbp: float, rate: float | None, fee: float | None,
+              note: str) -> int:
+    """Record an EUR->GBP conversion on the reference sheet (never part of the VAT totals)."""
+    if parse_ddmmyy(date) is None:
+        raise TrackerError(f"FX date must be DD.MM.YY, got {date!r}")
+    ws = wb[FX_SHEET]
+    header = next((c.row for c in ws["A"] if c.value == "Date"
+                   and ws.cell(c.row, 2).value == "EUR Converted"), None)
+    if header is None:
+        raise TrackerError(f"Header row not found on {FX_SHEET}")
+    r = header + 1
+    while ws.cell(r, 1).value not in (None, "") and FX_PLACEHOLDER not in str(ws.cell(r, 1).value):
+        if ws.cell(r, 1).value == date and abs((ws.cell(r, 2).value or 0) - eur) < 0.005:
+            raise TrackerError(f"FX entry {date} EUR {eur:.2f} already recorded (row {r})")
+        r += 1
+    for col, v in enumerate([date, round(eur, 2), round(gbp, 2), rate, fee, note], start=1):
+        ws.cell(r, col).value = v
+    return r
 
 
 def delete_row(layout: Layout, backup_root: Path, *, row: int, expect_date: str,

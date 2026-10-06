@@ -31,6 +31,8 @@ V18_TRACKER = "VAT Return-May-Sept-26/VATReturn_Automated_v18_delivered_1.xlsx"
 RECEIPT_ROOTS = ("VAT Return-SEPT-DEC/Receipts, Invoices-Sept-Dec,2026",
                  "VAT Return-May-Sept-26/Receipts-Invoice-VAT-Return-May-Sept, 26")
 WRITABLE = (SEPTDEC_TRACKER,)          # existing files the run may change (plus _automation/)
+LOCK = "_automation/run.lock"          # one run at a time; updated in place, never deleted
+LOCK_STALE_SECONDS = 45 * 60
 
 
 def _sha1(path: Path) -> str:
@@ -67,7 +69,7 @@ def pull(od: OneDrive, dest: Path) -> dict:
         if it.folder:
             p.mkdir(parents=True, exist_ok=True)
             continue
-        if any(it.rel == d or it.rel.startswith(d + "/") for d in SKIP_DIRS):
+        if any(it.rel == d or it.rel.startswith(d + "/") for d in SKIP_DIRS) or it.rel == LOCK:
             continue
         p.parent.mkdir(parents=True, exist_ok=True)
         full = _wants_full(it.rel)
@@ -207,6 +209,60 @@ def push(od: OneDrive, dest: Path, dry_run: bool = False) -> dict:
     return report
 
 
+# -- run lock (compare-and-swap on the OneDrive eTag) ---------------------------------------
+
+def _now() -> float:
+    import time
+    return time.time()
+
+
+def acquire_lock(od: OneDrive, now: float | None = None) -> bool:
+    """True if this run may proceed. A busy lock gets rerun=True so the running job runs again."""
+    from .graph import GraphError
+    now = now if now is not None else _now()
+    mine = json.dumps({"state": "running", "since": now, "rerun": False}).encode()
+    it = od.item(LOCK)
+    if it is None:
+        try:
+            od.upload_new(LOCK, mine)
+            return True
+        except GraphError:
+            it = od.item(LOCK)              # someone created it a moment ago
+            if it is None:
+                raise
+    cur = json.loads(od.download(it["id"]) or b"{}")
+    busy = cur.get("state") == "running" and now - float(cur.get("since", 0)) < LOCK_STALE_SECONDS
+    try:
+        if busy:
+            cur["rerun"] = True
+            od.replace(it["id"], json.dumps(cur).encode(), it["eTag"])
+            return False
+        od.replace(it["id"], mine, it["eTag"])
+        return True
+    except ConflictError:
+        return False                         # lost the race: the other run will see new files
+
+
+def release_lock(od: OneDrive) -> bool:
+    """Mark the lock idle. Returns True if another run was requested while this one held it."""
+    it = od.item(LOCK)
+    if it is None:
+        return False
+    cur = json.loads(od.download(it["id"]) or b"{}")
+    od.replace(it["id"], json.dumps({"state": "idle", "since": _now(), "rerun": False}).encode(), it["eTag"])
+    return bool(cur.get("rerun"))
+
+
+def new_inbox_files(od: OneDrive, dest: Path) -> list[str]:
+    """Inbox files in OneDrive that this run never saw (arrived while it was running)."""
+    seen = {e["rel"] for e in load_manifest(dest)["entries"]}
+    plan = plan_push(dest)
+    seen |= {r for r, _ in plan.uploads} | {n for _, n in plan.moves}
+    items = od.list_tree({"processed"}, start="Receipts Inbox")
+    return [i.rel for i in items if not i.folder and i.rel.startswith("Receipts Inbox/")
+            and "/processed/" not in i.rel and i.rel not in seen]
+
+
 # -- session: tokens and wiring ---------------------------------------------------------
 
 STATE_DOC = "fonenova-cloud.json"
@@ -298,7 +354,15 @@ def main(argv=None) -> int:
     if args.cmd == "prep":
         creds = _google()
         od = onedrive_session(creds, _base(cfg))
-        m = pull(od, dest)
+        if not acquire_lock(od):
+            print(json.dumps({"busy": True, "work_needed": False,
+                              "note": "another run is in progress; it will run again afterwards"}))
+            return 0
+        try:
+            m = pull(od, dest)
+        except Exception:
+            release_lock(od)
+            raise
         save_access(dest, od)
         install_mirror_resolver(dest)
         from .daily import Paths, collect
@@ -348,7 +412,25 @@ def main(argv=None) -> int:
         if note:
             from .gmail import send_self, service
             send_self(service(Path("."), creds=creds), f"[Fone Nova expenses] {note[0]}", note[1])
-        print(json.dumps({"push": report, "notified": bool(note)}, indent=2))
+        replies = []
+        if result and not report["aborted"]:
+            from . import whatsapp as wa
+            for rep in result.get("whatsapp_replies", []):
+                num = wa.number_for(rep.get("to", ""))
+                try:
+                    if num:
+                        wa.send_text(num, rep["text"])
+                        replies.append(rep.get("to"))
+                except Exception as ex:
+                    report["errors"].append(f"WhatsApp reply to {rep.get('to')} failed: {ex}")
+        late = new_inbox_files(od, dest)
+        rerun = release_lock(od)
+        retriggered = False
+        if late or rerun:
+            from .whatsapp import fire_trigger
+            retriggered = fire_trigger(f"{len(late)} file(s) arrived during the previous run")
+        print(json.dumps({"push": report, "notified": bool(note), "whatsapp_replies": replies,
+                          "late_files": late, "retriggered": retriggered}, indent=2))
         return 1 if report["aborted"] else 0
     return 2
 

@@ -107,12 +107,15 @@ class OneDrive:
             raise GraphError(f"GET {rel}: {r.status_code} {r.text[:200]}")
         return r.json()
 
-    def list_tree(self, skip_dirs: set[str] = frozenset()) -> list[Item]:
-        root = self.item("")
+    def list_tree(self, skip_dirs: set[str] = frozenset(), start: str = "") -> list[Item]:
+        """Every item under `start` (relative to base); rel paths are relative to base."""
+        root = self.item(start)
         if root is None:
+            if start:
+                return []
             raise GraphError(f"OneDrive folder not found: {self.base}")
         out: list[Item] = []
-        stack = [("", root["id"])]
+        stack = [(start.strip("/"), root["id"])]
         while stack:
             rel, fid = stack.pop()
             self._ids[rel] = fid

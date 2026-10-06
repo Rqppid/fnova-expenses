@@ -7,11 +7,15 @@ Commands
            [--vat-amount N] --remarks TEXT  append a row above Total
   delete   --row N --expect-date D --expect-vendor V --expect-amount N
   complete --row N [--amount N] [--vat Yes|No] [--vat-amount N] [--remarks TEXT] ...
-  file     --src PATH --vendor V --date DD.MM.YY [--folder F] [--descriptor X] [--tracker septdec]
+  file     --src PATH [PATH...] --vendor V --date DD.MM.YY [--to-pdf] [--folder F] [--descriptor X]
+           (--to-pdf: photo(s) become one greyscale PDF; originals go to Receipts Inbox/processed)
   verify   [--tracker septdec]
   backup
   diff     BEFORE AFTER
   pack     [--out DIR]                      VAT return pack for the accountant (read-only)
+  statement --path FILE [--log]             reconcile a Revolut CSV against both trackers; --log adds
+                                            missing card payments/fees (VAT-No, RECEIPT MISSING) and FX
+  fx       --pdf FILE | --date D --eur N --gbp N [--rate N] [--fee N]   record an EUR->GBP exchange
   find     [--date DD.MM.YY] [--amount N] [--ref TEXT] [--days 3]   search both trackers
   archive  --path FILE                      move a Receipts Inbox file to Receipts Inbox/processed/<date>/
   gmail-auth                                one-time browser sign-in for the Gmail API
@@ -32,6 +36,10 @@ def _vat_flag(v: str | None) -> str | None:
         return None
     v = v.strip().lower()
     return {"yes": "VAT-Yes", "vat-yes": "VAT-Yes", "no": "VAT-No", "vat-no": "VAT-No"}[v]
+
+
+def broot_for(cfg) -> Path:
+    return backup_root(cfg)
 
 
 def main(argv=None) -> int:
@@ -68,7 +76,9 @@ def main(argv=None) -> int:
             p.add_argument("--vat-amount", type=float)
 
     f = sub.add_parser("file")
-    f.add_argument("--src", required=True); f.add_argument("--vendor", required=True)
+    f.add_argument("--src", required=True, nargs="+", help="one file, or several photos of one receipt")
+    f.add_argument("--to-pdf", action="store_true", help="convert photo(s) to a clean greyscale PDF")
+    f.add_argument("--vendor", required=True)
     f.add_argument("--date", required=True); f.add_argument("--folder"); f.add_argument("--descriptor")
     f.add_argument("--tracker", default="septdec")
 
@@ -76,6 +86,11 @@ def main(argv=None) -> int:
     d = sub.add_parser("diff"); d.add_argument("before"); d.add_argument("after")
     fd = sub.add_parser("find"); fd.add_argument("--date"); fd.add_argument("--amount", type=float)
     fd.add_argument("--ref"); fd.add_argument("--days", type=int, default=3)
+    st = sub.add_parser("statement"); st.add_argument("--path", required=True)
+    st.add_argument("--log", action="store_true")
+    fxp = sub.add_parser("fx"); fxp.add_argument("--pdf"); fxp.add_argument("--date")
+    for k in ("eur", "gbp", "rate", "fee"):
+        fxp.add_argument(f"--{k}", type=float)
     ar = sub.add_parser("archive"); ar.add_argument("--path", required=True)
     sub.add_parser("gmail-auth")
     dl = sub.add_parser("daily"); dl.add_argument("--no-claude", action="store_true")
@@ -135,6 +150,54 @@ def main(argv=None) -> int:
         print(f"{hits} match(es)")
         return 0
 
+    if args.cmd in ("statement", "fx"):
+        import openpyxl
+        from .sheet import read_snapshot
+        from . import statements as S
+        from .tracker import add_rows, fx_entries
+        live = lays["septdec"]
+        snaps = {k: read_snapshot(l.path, l) for k, l in lays.items()}
+        existing_fx = fx_entries(openpyxl.load_workbook(live.path))
+        if args.cmd == "statement":
+            src = Path(args.path)
+            rec = S.reconcile(S.parse_csv(src), snaps, live)
+            print(S.describe(rec))
+            rows, fx = S.rows_for(rec, src.name, existing_fx)
+        else:
+            if args.pdf:
+                import pdfplumber
+                with pdfplumber.open(args.pdf) as pdf:
+                    text = "\n".join(p.extract_text() or "" for p in pdf.pages)
+                    info = S.parse_fx_confirmation(text)
+                if not info:
+                    print("not a Revolut EUR->GBP exchange statement"); return 2
+                note = f"Revolut exchange confirmation {Path(args.pdf).name}"
+            else:
+                info = dict(date=args.date, eur=args.eur, gbp=args.gbp, rate=args.rate, fee=args.fee)
+                note = "Revolut exchange (entered manually)"
+            if (info["date"], round(info["eur"], 2)) in existing_fx:
+                print(f"FX {info['date']} EUR {info['eur']:,.2f} already recorded"); return 0
+            from .sheet import parse_ddmmyy
+            t = S.Txn(date=parse_ddmmyy(info["date"]), started=None,
+                      id="", type="EXCHANGE", state="COMPLETED", description="EUR -> GBP", reference="",
+                      currency="GBP", amount=info["gbp"], fee=info.get("fee") or 0.0, orig_currency="EUR",
+                      orig_amount=-info["eur"], rate=info.get("rate"))
+            rec = S.Reconciliation(snaps=snaps, fx=[t])
+            rows, fx = S.rows_for(rec, Path(args.pdf).name if args.pdf else "manual entry", existing_fx)
+            fx[0]["note"] = note + (f"; fee already logged as {S.fee_already_logged(rec, t)}"
+                                    if t.fee and S.fee_already_logged(rec, t) else "")
+            print(f"FX {info['date']}: EUR {info['eur']:,.2f} -> GBP {info['gbp']:,.2f}, fee {info.get('fee')}")
+        print(f"would add {len(rows)} expense row(s) and {len(fx)} FX entr(y/ies)")
+        if args.cmd == "statement" and not args.log:
+            return 0
+        if not rows and not fx:
+            return 0
+        res = add_rows(live, broot_for(cfg), rows, fx=fx, label=args.cmd)
+        print(res.note)
+        print(f"verified: rows to {res.last_row}, gross {res.gross:,.2f} / VAT {res.vat:,.2f}")
+        print(f"backup: {res.backup_dir}")
+        return 0
+
     if args.cmd == "archive":
         import os
         from datetime import date as _d
@@ -174,9 +237,17 @@ def main(argv=None) -> int:
         return 0
 
     if args.cmd == "file":
-        from .filing import file_receipt
-        r = file_receipt(Path(args.src), lays[args.tracker].receipts, vendor=args.vendor,
-                         date=args.date, folder=args.folder, descriptor=args.descriptor)
+        from datetime import date as _d
+        from .filing import file_receipt, file_receipt_pdf
+        from .intake import inbox_dir
+        if args.to_pdf or len(args.src) > 1:
+            r = file_receipt_pdf([Path(s) for s in args.src], lays[args.tracker].receipts,
+                                 inbox_dir(Path(cfg["root"])) / "processed" / f"{_d.today():%Y-%m-%d}",
+                                 vendor=args.vendor, date=args.date, folder=args.folder,
+                                 descriptor=args.descriptor)
+        else:
+            r = file_receipt(Path(args.src[0]), lays[args.tracker].receipts, vendor=args.vendor,
+                             date=args.date, folder=args.folder, descriptor=args.descriptor)
         print(f"{r.status}: {r.src} -> {r.dest} {r.note}")
         return 0 if r.status == "moved" else 2
 

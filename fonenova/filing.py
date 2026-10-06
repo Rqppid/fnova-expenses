@@ -86,3 +86,39 @@ def file_receipt(src: Path, receipts_root: Path, *, vendor: str, date: str,
     if src.exists() or not dest.exists() or sha256(dest) != src_hash:
         raise FilingError(f"Move of {src} to {dest} did not complete cleanly")
     return FileResult("moved", src, dest)
+
+
+def _move_original(src: Path, processed_dir: Path) -> Path:
+    processed_dir.mkdir(parents=True, exist_ok=True)
+    target = processed_dir / src.name
+    n = 1
+    while target.exists():
+        n += 1
+        target = processed_dir / f"{src.stem}-{n}{src.suffix}"
+    os.replace(src, target)
+    return target
+
+
+def file_receipt_pdf(srcs: list[Path], receipts_root: Path, processed_dir: Path, *, vendor: str,
+                     date: str, folder: str | None = None, descriptor: str | None = None) -> FileResult:
+    """Photo(s) -> one clean greyscale PDF filed as <Vendor>-DD.MM.YY.pdf; originals are moved
+    to processed_dir (kept, never deleted). A source that is already a PDF is filed as it is."""
+    from .imaging import is_image, to_pdf
+    srcs = [Path(s) for s in srcs]
+    for s in srcs:
+        if not s.is_file():
+            raise FilingError(f"Source not found: {s}")
+    if not all(is_image(s) for s in srcs):
+        if len(srcs) == 1:
+            return file_receipt(srcs[0], receipts_root, vendor=vendor, date=date, folder=folder,
+                                descriptor=descriptor)
+        raise FilingError("Only photos can be combined into one PDF")
+    folder_path = receipts_root / (folder or resolve_folder(receipts_root, vendor))
+    dest = folder_path / receipt_name(vendor, date, ".pdf", descriptor)
+    if dest.exists():
+        raise FilingError(f"{dest.name} already exists; pass a descriptor")
+    to_pdf(srcs, dest)
+    moved = [_move_original(s, processed_dir) for s in srcs]
+    return FileResult("moved", srcs[0], dest,
+                      f"converted {len(srcs)} photo(s) to PDF; original(s) kept in {processed_dir.name}: "
+                      + ", ".join(m.name for m in moved))
