@@ -61,11 +61,63 @@ def download_media(media_id: str) -> tuple[bytes, str]:
     return data.content, m.get("mime_type", "application/octet-stream")
 
 
+class OutsideWindow(Exception):
+    """WhatsApp error 131047: the recipient hasn't messaged in 24h, so only templates are allowed."""
+
+
 def send_text(to_number: str, body: str) -> None:
     r = requests.post(f"{GRAPH}/{os.environ['WA_PHONE_NUMBER_ID']}/messages", headers=_auth(), timeout=30,
                       json={"messaging_product": "whatsapp", "to": to_number, "type": "text",
                             "text": {"body": body[:4000]}})
+    if not r.ok and '"code":131047' in r.text.replace(" ", ""):
+        raise OutsideWindow(to_number)
     r.raise_for_status()
+
+
+def send_template(to_number: str, name: str, text: str, lang: str = "en_GB") -> None:
+    """One-parameter utility template, e.g. body 'Fone Nova expenses: {{1}}'. Allowed any time."""
+    param = re.sub(r"\s+", " ", text).strip()[:900]          # template params: no newlines/tabs
+    r = requests.post(f"{GRAPH}/{os.environ['WA_PHONE_NUMBER_ID']}/messages", headers=_auth(), timeout=30,
+                      json={"messaging_product": "whatsapp", "to": to_number, "type": "template",
+                            "template": {"name": name, "language": {"code": lang},
+                                         "components": [{"type": "body",
+                                                         "parameters": [{"type": "text", "text": param}]}]}})
+    r.raise_for_status()
+
+
+def send_any(to_number: str, text: str, send=None, template=None) -> str:
+    """Free text if the 24h window is open, else the copy template if configured. Returns how."""
+    send = send or send_text
+    template = template or send_template
+    try:
+        send(to_number, text)
+        return "text"
+    except OutsideWindow:
+        name = os.environ.get("WA_COPY_TEMPLATE", "").strip()
+        if not name:
+            return "skipped (outside 24h window, no WA_COPY_TEMPLATE set)"
+        template(to_number, name, text, os.environ.get("WA_COPY_TEMPLATE_LANG", "en_GB"))
+        return "template"
+
+
+def deliver_replies(replies: list[dict], send=None, template=None) -> tuple[list[str], list[str]]:
+    """Send each run result to the person who sent the file, and a copy to everyone else allowed.
+
+    Returns (delivered, problems). Problems with copies are informational, never errors for Hamza.
+    """
+    who = allowed()                                         # number -> label
+    delivered, problems = [], []
+    for rep in replies:
+        sender, text = rep.get("to", ""), rep.get("text", "")
+        sender_num = number_for(sender)
+        for num, label in who.items():
+            body = text if num == sender_num else f"[{sender or 'Someone'}] {text}"
+            try:
+                how = send_any(num, body, send, template)
+                (delivered if how in ("text", "template") else problems).append(f"{label}: {how}")
+            except Exception as e:
+                problems.append(f"{label}: failed ({e})")
+    return delivered, problems
 
 
 def _safe(name: str) -> str:

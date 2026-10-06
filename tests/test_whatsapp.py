@@ -134,3 +134,23 @@ def test_fire_sends_routine_headers(monkeypatch):
     monkeypatch.setattr(wa.requests, "post", post)
     assert wa.fire_trigger("x") == (True, "HTTP 200 {}")
     assert seen["anthropic-beta"].startswith("experimental-cc-routine") and seen["Authorization"] == "Bearer tok"
+
+
+def test_replies_go_to_sender_and_copies_to_everyone(monkeypatch):
+    monkeypatch.setenv("WA_ALLOWED", "Hamza:441,Wahidullah:442,Company:443")
+    monkeypatch.delenv("WA_COPY_TEMPLATE", raising=False)
+    sent, tmpl = [], []
+
+    def send(n, t):
+        if n == "443":
+            raise wa.OutsideWindow(n)          # company number hasn't messaged in 24h
+        sent.append((n, t))
+    delivered, notes = wa.deliver_replies([{"to": "Wahidullah", "text": "Logged: Tesco £6.00"}],
+                                          send=send, template=lambda *a: tmpl.append(a))
+    assert ("442", "Logged: Tesco £6.00") in sent                 # sender: plain
+    assert ("441", "[Wahidullah] Logged: Tesco £6.00") in sent    # copy to Hamza
+    assert tmpl == [] and any("Company: skipped" in n for n in notes)
+    monkeypatch.setenv("WA_COPY_TEMPLATE", "expense_update")
+    delivered, notes = wa.deliver_replies([{"to": "Hamza", "text": "Logged: x"}],
+                                          send=send, template=lambda *a: tmpl.append(a))
+    assert tmpl and tmpl[0][0] == "443" and tmpl[0][1] == "expense_update" and "Company: template" in delivered

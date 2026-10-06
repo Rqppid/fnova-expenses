@@ -413,17 +413,11 @@ def main(argv=None) -> int:
         if note:
             from .gmail import send_self, service
             send_self(service(Path("."), creds=creds), f"[Fone Nova expenses] {note[0]}", note[1])
-        replies = []
+        replies, reply_notes = [], []
         if result and not report["aborted"]:
             from . import whatsapp as wa
-            for rep in result.get("whatsapp_replies", []):
-                num = wa.number_for(rep.get("to", ""))
-                try:
-                    if num:
-                        wa.send_text(num, rep["text"])
-                        replies.append(rep.get("to"))
-                except Exception as ex:
-                    report["errors"].append(f"WhatsApp reply to {rep.get('to')} failed: {ex}")
+            # Sender gets the result; Hamza, Wahidullah and the company number all get a copy.
+            replies, reply_notes = wa.deliver_replies(result.get("whatsapp_replies", []))
         late = new_inbox_files(od, dest)
         rerun = release_lock(od)
         retriggered = False
@@ -431,6 +425,7 @@ def main(argv=None) -> int:
             from .whatsapp import fire_trigger
             retriggered = fire_trigger(f"{len(late)} file(s) arrived during the previous run")[0]
         print(json.dumps({"push": report, "notified": bool(note), "whatsapp_replies": replies,
+                          "whatsapp_notes": reply_notes,
                           "late_files": late, "retriggered": retriggered}, indent=2))
         return 1 if report["aborted"] else 0
     return 2
