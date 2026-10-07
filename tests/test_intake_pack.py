@@ -60,3 +60,15 @@ def test_inbox_duplicate_is_archived_and_sender_told(tmp_path, lays):
     s = collect(cfg, today=date(2026, 10, 7))
     assert not f.exists() and (root / "Receipts Inbox/processed/2026-10-07" / f.name).exists()
     assert s["auto_replies"][0]["to"] == "Wahidullah" and "Already logged" in s["auto_replies"][0]["text"]
+
+
+def test_email_only_when_important(tmp_path):
+    from datetime import date
+    from fonenova.daily import finalize
+    cfg = {"root": str(tmp_path)}
+    base = {"candidates": [], "duplicates": [], "row_issues": [], "alerts": [], "gmail": None}
+    assert finalize(cfg, dict(base), {"logged": ["06.10.26 Tesco £6.00 (row 71)"]}, today=date(2026, 10, 7)) is None
+    note = finalize(cfg, dict(base), {"logged": ["x"], "needs_hamza": ["amount unreadable"]}, today=date(2026, 10, 7))
+    assert note and "action needed" in note[0] and "amount unreadable" in note[1]
+    assert finalize(cfg, dict(base), None, extra_errors=["boom"], today=date(2026, 10, 7))
+    assert finalize(cfg, dict(base), None, today=date(2026, 10, 31))           # deadline reminder

@@ -143,9 +143,11 @@ def finalize(cfg: dict, summary: dict, result: dict | None, extra_errors=(),
     P.log(f"{'cloud' if cfg.get('cloud_mode') else 'pc'} run: {len(summary['candidates'])} new candidate(s), "
           f"{len(summary['duplicates'])} duplicate(s), {len(summary['row_issues'])} tracker issue(s), "
           f"logged {len(res.get('logged', []))}, alerts {len(alerts)}, gmail {summary.get('gmail')}")
-    if not alerts:
+    # Email only when something matters. Routine "Logged/Fixed" confirmations go to WhatsApp only.
+    IMPORTANT = ("Needs", "Error", "Gmail", "Excel", "Receipt missing", "VAT return due")
+    if not any(x.startswith(IMPORTANT) for x in alerts):
         return None
-    urgent = any(x.startswith(("Needs", "Error", "Gmail", "Excel")) for x in alerts)
+    urgent = True
     body = "\n".join(f"- {x}" for x in alerts)
     if t:
         body += (f"\n\nTracker: rows to {t.get('last_row')}, £{t.get('gross', 0):,.2f} gross / "
