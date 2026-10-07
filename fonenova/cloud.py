@@ -51,7 +51,16 @@ def _all_zero(path: Path) -> bool:
     return True
 
 
+# Run state the next run actually reads. Old work-/result-/claude- records stay in OneDrive as an
+# audit trail but are not downloaded (they would make every run slower as they pile up).
+STATE_KEEP = {"gmail_seen.json", "last_fingerprint.json", "reminders_sent.json",
+              "last_gmail_error_day.json", "last_run.json"}
+
+
 def _wants_full(rel: str) -> bool:
+    if rel.startswith("_automation/"):
+        name = rel.rsplit("/", 1)[-1]
+        return rel == "_automation/run-log.md" or (rel.startswith("_automation/state/") and name in STATE_KEEP)
     if rel in (SEPTDEC_TRACKER, V18_TRACKER) or rel.startswith(FULL_PREFIXES):
         return True
     parent = rel.rpartition("/")[0]

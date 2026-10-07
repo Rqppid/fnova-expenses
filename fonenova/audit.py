@@ -242,6 +242,23 @@ def _match(snap: Snapshot, idx: ReceiptIndex) -> list[Match]:
     return out
 
 
+@dataclass
+class TrackerHealth:
+    snap: Snapshot
+    row_issues: list[tuple[str, int, str]]
+    structure: list[str]
+
+
+def tracker_health(layout: Layout) -> TrackerHealth:
+    """Row and structure checks only: no receipt-folder scan, so no file fingerprints are needed.
+    The routine uses this; the full audit_tracker() stays for reports and the return pack."""
+    wb = openpyxl.load_workbook(layout.path)
+    snap = read_snapshot_ws(wb, layout)
+    structure = [p for p in structural_problems(snap) if not p.startswith("row ")]
+    issues, _, _ = _row_issues(snap)
+    return TrackerHealth(snap, issues, structure)
+
+
 def audit_tracker(layout: Layout) -> TrackerAudit:
     wb = openpyxl.load_workbook(layout.path)
     snap = read_snapshot_ws(wb, layout)

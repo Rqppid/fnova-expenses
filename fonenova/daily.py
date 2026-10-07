@@ -79,8 +79,8 @@ def collect(cfg: dict, gmail_svc=None, gmail_error: str | None = None, today: da
     summary["duplicates"] = [{"path": str(c.path), "same_as": c.duplicate_of}
                              for c in cands if c.duplicate_of]
 
-    from .audit import audit_tracker
-    a = audit_tracker(lays["septdec"])
+    from .audit import tracker_health
+    a = tracker_health(lays["septdec"])
     known = {int(k) for k in cfg.get("known_issues", {}).get("septdec", {})}
     issues = [f"row {r}: {k}" for k, r, _ in a.row_issues if r not in known] + a.structure
     summary["row_issues"] = issues
