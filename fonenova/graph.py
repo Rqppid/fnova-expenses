@@ -108,7 +108,69 @@ class OneDrive:
         return r.json()
 
     def list_tree(self, skip_dirs: set[str] = frozenset(), start: str = "") -> list[Item]:
-        """Every item under `start` (relative to base); rel paths are relative to base."""
+        """Every item under `start` (relative to base); rel paths are relative to base.
+
+        Uses one paged delta query (a few requests for the whole tree) and falls back to walking
+        folder by folder (one request per folder) if delta is unavailable.
+        """
+        try:
+            return self._list_tree_delta(skip_dirs, start)
+        except GraphError:
+            return self._list_tree_walk(skip_dirs, start)
+
+    def _list_tree_delta(self, skip_dirs: set[str], start: str) -> list[Item]:
+        root = self.item(start)
+        if root is None:
+            if start:
+                return []
+            raise GraphError(f"OneDrive folder not found: {self.base}")
+        start = start.strip("/")
+        nodes: dict[str, dict] = {}
+        url = (f"/me/drive/items/{root['id']}/delta"
+               "?$select=id,name,eTag,size,file,folder,parentReference,deleted")
+        while url:
+            data = self._req("GET", url).json()
+            for c in data.get("value", []):
+                if "deleted" not in c:
+                    nodes[c["id"]] = c
+            url = data.get("@odata.nextLink")
+        rels: dict[str, str] = {root["id"]: start}
+
+        def rel_of(i: str) -> str | None:
+            if i in rels:
+                return rels[i]
+            n = nodes.get(i)
+            if n is None:
+                return None
+            parent = rel_of((n.get("parentReference") or {}).get("id", ""))
+            if parent is None:
+                return None
+            rels[i] = f"{parent}/{n['name']}".lstrip("/")
+            return rels[i]
+
+        def skipped(rel: str) -> bool:
+            parts = rel.split("/")
+            # Inside a skipped folder (the folder entry itself is still listed, like the walk).
+            return any(p in skip_dirs or "/".join(parts[:k + 1]) in skip_dirs for k, p in enumerate(parts[:-1]))
+
+        out: list[Item] = []
+        for i, c in nodes.items():
+            if i == root["id"]:
+                continue
+            rel = rel_of(i)
+            if rel is None or skipped(rel):
+                continue
+            if "folder" in c:
+                self._ids[rel] = i
+                out.append(Item(rel, i, c.get("eTag", ""), 0, None, True))
+            else:
+                h = (c.get("file") or {}).get("hashes") or {}
+                out.append(Item(rel, i, c.get("eTag", ""), int(c.get("size", 0)),
+                                (h.get("sha1Hash") or "").lower() or None, False))
+        self._ids[start] = root["id"]
+        return out
+
+    def _list_tree_walk(self, skip_dirs: set[str] = frozenset(), start: str = "") -> list[Item]:
         root = self.item(start)
         if root is None:
             if start:
