@@ -29,6 +29,13 @@ C. FX confirmation (Revolut EUR to GBP exchange, PDF or screenshot): PDF: `fx --
 
 For each row issue: complete the row in place with `complete` (convert text amounts, add helpers, write Remarks citing the receipt file). If the amount cannot be determined from a receipt, do not guess: `needs_hamza`.
 
+What counts as `needs_hamza` (these make the email say "action needed", so keep it to real blockers):
+an amount or date you cannot read, a suspected duplicate you did not resolve, an item outside the
+tracker period, a statement line listed for review, or anything you could not file or log.
+NOT `needs_hamza`: VAT decided by a standing default (Tesco VAT-No, travel VAT-No, "nothing printed:
+VAT-No, not independently verified", energy top-ups with no VAT printed, etc.). Write that reasoning
+in the row's Remarks only; the accountant reviews VAT treatment from the Remarks and the return pack.
+
 Finish with `{CLI} verify`.
 
 Then write {RESULT_FILE} as JSON:

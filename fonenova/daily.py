@@ -134,6 +134,12 @@ def finalize(cfg: dict, summary: dict, result: dict | None, extra_errors=(),
     P.save("last_run.json", {**summary, "result": res, "alerts": alerts})
 
     t = summary.get("totals", {})
+    try:                                    # report the tracker as it is now, after the run
+        from .audit import tracker_health
+        snap = tracker_health(layouts(cfg)["septdec"]).snap
+        t = {"last_row": snap.last_row, "gross": snap.gross, "vat": snap.vat}
+    except Exception:
+        pass
     P.log(f"{'cloud' if cfg.get('cloud_mode') else 'pc'} run: {len(summary['candidates'])} new candidate(s), "
           f"{len(summary['duplicates'])} duplicate(s), {len(summary['row_issues'])} tracker issue(s), "
           f"logged {len(res.get('logged', []))}, alerts {len(alerts)}, gmail {summary.get('gmail')}")

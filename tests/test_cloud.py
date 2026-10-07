@@ -202,3 +202,14 @@ def test_cloud_mode_flag_does_not_clobber_cloud_settings(tmp_path):
     cfg.update(root=str(tmp_path), cloud_mode=True)
     assert cloud._base(cfg) == "Desktop/VAT RETURNS"
     assert cfg["cloud"]["ms_client_id"]
+
+
+def test_gmail_manifest_append_is_pushed_not_an_error(drive, tmp_path):
+    drive._put("Receipts Inbox/gmail/manifest.jsonl", b'{"a":1}\n')
+    dest = tmp_path / "m"
+    cloud.pull(drive, dest)
+    with open(dest / "Receipts Inbox/gmail/manifest.jsonl", "a") as fh:
+        fh.write('{"b":2}\n')
+    plan = cloud.plan_push(dest)
+    assert plan.errors == []
+    assert [e["rel"] for e, _ in plan.automation_updates] == ["Receipts Inbox/gmail/manifest.jsonl"]

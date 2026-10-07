@@ -31,6 +31,7 @@ V18_TRACKER = "VAT Return-May-Sept-26/VATReturn_Automated_v18_delivered_1.xlsx"
 RECEIPT_ROOTS = ("VAT Return-SEPT-DEC/Receipts, Invoices-Sept-Dec,2026",
                  "VAT Return-May-Sept-26/Receipts-Invoice-VAT-Return-May-Sept, 26")
 WRITABLE = (SEPTDEC_TRACKER,)          # existing files the run may change (plus _automation/)
+APPEND_FILES = ("Receipts Inbox/gmail/manifest.jsonl",)   # bookkeeping the run appends to
 LOCK = "_automation/run.lock"          # one run at a time; updated in place, never deleted
 LOCK_STALE_SECONDS = 45 * 60
 
@@ -168,7 +169,7 @@ def plan_push(dest: Path) -> PushPlan:
         if changed:
             if e["rel"] in WRITABLE and rel == e["rel"]:
                 plan.tracker_updates.append((e, p))
-            elif e["rel"].startswith("_automation/") and rel == e["rel"]:
+            elif (e["rel"].startswith("_automation/") or e["rel"] in APPEND_FILES) and rel == e["rel"]:
                 plan.automation_updates.append((e, p))
             else:
                 plan.errors.append(f"{e['rel']} was modified locally but is not writable; not pushed")
