@@ -423,10 +423,12 @@ def main(argv=None) -> int:
             from .gmail import send_self, service
             send_self(service(Path("."), creds=creds), f"[Fone Nova expenses] {note[0]}", note[1])
         replies, reply_notes = [], []
-        if result and not report["aborted"]:
+        if not report["aborted"]:
             from . import whatsapp as wa
             # Sender gets the result; Hamza, Wahidullah and the company number all get a copy.
-            replies, reply_notes = wa.deliver_replies(result.get("whatsapp_replies", []))
+            todo = list((result or {}).get("whatsapp_replies", [])) + list(summary.get("auto_replies", []))
+            if todo:
+                replies, reply_notes = wa.deliver_replies(todo)
         late = new_inbox_files(od, dest)
         rerun = release_lock(od)
         retriggered = False

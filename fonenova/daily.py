@@ -78,6 +78,25 @@ def collect(cfg: dict, gmail_svc=None, gmail_error: str | None = None, today: da
     summary["candidates"] = [{"path": str(c.path), "source": c.source, "size": c.size} for c in new]
     summary["duplicates"] = [{"path": str(c.path), "same_as": c.duplicate_of}
                              for c in cands if c.duplicate_of]
+    # Inbox files identical to an already-filed receipt: move them out of the inbox (kept in
+    # processed/, never deleted) and tell the WhatsApp sender, so they don't sit there forever.
+    summary["auto_replies"] = []
+    import os
+    import re as _re
+    done_dir = inbox_dir(root) / "processed" / f"{today:%Y-%m-%d}"
+    for c in cands:
+        if c.duplicate_of and c.source == "inbox" and c.path.exists():
+            done_dir.mkdir(parents=True, exist_ok=True)
+            target = done_dir / c.path.name
+            if not target.exists():
+                os.replace(c.path, target)
+            m = _re.match(r"\d{8}-\d{4}_([A-Za-z0-9]+)_", c.path.name)
+            if m and "whatsapp" in c.path.parts:
+                filed = c.duplicate_of.split(":", 1)[-1]
+                summary["auto_replies"].append({
+                    "to": m.group(1),
+                    "text": f"Already logged: {c.path.name.split('_', 3)[-1]} is identical to {filed}, "
+                            "so nothing new was added."})
 
     from .audit import tracker_health
     a = tracker_health(lays["septdec"])

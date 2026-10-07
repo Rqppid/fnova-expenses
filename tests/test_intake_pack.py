@@ -37,3 +37,26 @@ def test_pack_counts_cross_tracker_duplicate_once(tmp_path, lays, septdec_copy, 
     # V18 (May-Aug + 01.09) + Sept-Dec Sept/Oct minus the duplicate.
     assert "**43,316.64**" in text and "**2,334.65**" in text
     assert xlsx.exists()
+
+
+def test_inbox_duplicate_is_archived_and_sender_told(tmp_path, lays):
+    from datetime import date
+    from fonenova.daily import collect
+    from fonenova.layout import load_config
+    import shutil
+    root = tmp_path
+    cfg = load_config(); cfg["root"] = str(root)
+    from fonenova.layout import layouts as L
+    for k, lay in L(cfg).items():
+        lay.receipts.mkdir(parents=True, exist_ok=True)
+        lay.path.parent.mkdir(parents=True, exist_ok=True)
+    from conftest import _reference, SEPTDEC_NAME, V18_NAME
+    shutil.copy2(_reference(SEPTDEC_NAME), L(cfg)["septdec"].path)
+    shutil.copy2(_reference(V18_NAME), L(cfg)["v18"].path)
+    (L(cfg)["septdec"].receipts / "Tesco").mkdir()
+    (L(cfg)["septdec"].receipts / "Tesco" / "Tesco-06.10.26.pdf").write_bytes(b"same receipt")
+    wa = root / "Receipts Inbox" / "whatsapp"; wa.mkdir(parents=True)
+    f = wa / "20261006-2222_Wahidullah_Q0QzNDMA_receipt.pdf"; f.write_bytes(b"same receipt")
+    s = collect(cfg, today=date(2026, 10, 7))
+    assert not f.exists() and (root / "Receipts Inbox/processed/2026-10-07" / f.name).exists()
+    assert s["auto_replies"][0]["to"] == "Wahidullah" and "Already logged" in s["auto_replies"][0]["text"]
