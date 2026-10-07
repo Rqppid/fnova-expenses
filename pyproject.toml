@@ -2,7 +2,7 @@
 name = "fonenova-expenses"
 version = "0.1.0"
 description = "Fone Nova Ltd expense tracking, filing and WhatsApp intake"
-requires-python = ">=3.12"
+requires-python = ">=3.11"
 dependencies = [
     "google-api-python-client==2.201.0",
     "google-auth==2.60.0",
