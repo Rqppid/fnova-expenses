@@ -100,17 +100,30 @@ def send_any(to_number: str, text: str, send=None, template=None) -> str:
         return "template"
 
 
-def deliver_replies(replies: list[dict], send=None, template=None) -> tuple[list[str], list[str]]:
-    """Send each run result to the person who sent the file, and a copy to everyone else allowed.
+def _no_copy() -> dict[str, list[str]]:
+    try:
+        from .layout import load_config
+        return load_config().get("whatsapp", {}).get("no_copy", {})
+    except Exception:                                       # never let config break delivery
+        return {}
+
+
+def deliver_replies(replies: list[dict], send=None, template=None,
+                    no_copy: dict | None = None) -> tuple[list[str], list[str]]:
+    """Send each run result to the person who sent the file, and a copy to everyone else allowed,
+    except the people config.toml [whatsapp.no_copy] mutes for that sender.
 
     Returns (delivered, problems). Problems with copies are informational, never errors for Hamza.
     """
     who = allowed()                                         # number -> label
+    mute = {s.lower(): {x.lower() for x in v} for s, v in (_no_copy() if no_copy is None else no_copy).items()}
     delivered, problems = [], []
     for rep in replies:
         sender, text = rep.get("to", ""), rep.get("text", "")
         sender_num = number_for(sender)
         for num, label in who.items():
+            if num != sender_num and label.lower() in mute.get(sender.lower(), set()):
+                continue
             body = text if num == sender_num else f"[{sender or 'Someone'}] {text}"
             try:
                 how = send_any(num, body, send, template)

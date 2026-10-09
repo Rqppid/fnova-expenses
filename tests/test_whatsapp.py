@@ -146,11 +146,25 @@ def test_replies_go_to_sender_and_copies_to_everyone(monkeypatch):
             raise wa.OutsideWindow(n)          # company number hasn't messaged in 24h
         sent.append((n, t))
     delivered, notes = wa.deliver_replies([{"to": "Wahidullah", "text": "Logged: Tesco £6.00"}],
-                                          send=send, template=lambda *a: tmpl.append(a))
+                                          send=send, template=lambda *a: tmpl.append(a), no_copy={})
     assert ("442", "Logged: Tesco £6.00") in sent                 # sender: plain
     assert ("441", "[Wahidullah] Logged: Tesco £6.00") in sent    # copy to Hamza
     assert tmpl == [] and any("Company: skipped" in n for n in notes)
     monkeypatch.setenv("WA_COPY_TEMPLATE", "expense_update")
     delivered, notes = wa.deliver_replies([{"to": "Hamza", "text": "Logged: x"}],
-                                          send=send, template=lambda *a: tmpl.append(a))
+                                          send=send, template=lambda *a: tmpl.append(a), no_copy={})
     assert tmpl and tmpl[0][0] == "443" and tmpl[0][1] == "expense_update" and "Company: template" in delivered
+
+
+def test_hamza_uploads_not_copied_to_wahidullah(monkeypatch):
+    monkeypatch.setenv("WA_ALLOWED", "Hamza:441,Wahidullah:442,Company:443")
+    from fonenova.layout import load_config
+    rule = load_config()["whatsapp"]["no_copy"]                   # the real config.toml rule
+    sent = []
+    wa.deliver_replies([{"to": "Hamza", "text": "Logged: Tesla"}], send=lambda n, t: sent.append((n, t)),
+                       no_copy=rule)
+    assert sent == [("441", "Logged: Tesla"), ("443", "[Hamza] Logged: Tesla")]
+    sent.clear()
+    wa.deliver_replies([{"to": "Wahidullah", "text": "Logged: Lidl"}], send=lambda n, t: sent.append((n, t)),
+                       no_copy=rule)
+    assert ("441", "[Wahidullah] Logged: Lidl") in sent and len(sent) == 3   # Hamza still copied

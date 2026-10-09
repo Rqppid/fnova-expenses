@@ -35,3 +35,8 @@ business_account_id = "931178819750215"
 # People allowed to send receipts (international format). Mirrors WA_ALLOWED in Vercel and the cloud env.
 allowed = { Hamza = "447359818591", Wahidullah = "447852402537", Company = "447949922872" }
 # Company SIM 07949922872 is a sender (allowed above). The bot's own number will be a different SIM.
+
+# Run results are copied to every allowed number except these (sender -> people who get no copy).
+# Hamza's uploads are not copied to Wahidullah; Wahidullah's are still copied to Hamza.
+[whatsapp.no_copy]
+Hamza = ["Wahidullah"]
